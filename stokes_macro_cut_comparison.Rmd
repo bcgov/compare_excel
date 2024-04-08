@@ -1,0 +1,87 @@
+---
+title: "Comparison of 4th and 5th Macro cut 2023"
+output: flexdashboard::flex_dashboard
+runtime: shiny
+resource_files:
+- out/joined.rds
+---
+
+```{r, include=FALSE}
+library(tidyverse)
+library(here)
+library(readxl)
+library(janitor)
+library(assertthat)
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+```
+
+```{r}
+joined <- read_rds(here("out","joined.rds"))
+files <- unique(joined$which_file)
+```
+
+
+Inputs {.sidebar}
+-------------------------------------
+
+*  This app allows you to quickly see what has changed between Stokes cuts: in this case we are comparing the
+fourth and fifth macro cuts of 2023. 
+
+*  Percentage differences are colour coded, allowing you to see what measures over what years vary between cuts.
+
+*  You can hover over the cells to get more details.
+
+
+```{r}
+selectInput(
+  "file",
+  "Select an excel file to compare",
+  files,
+  selected = files[1]
+)
+
+filtered <- reactive({
+  joined|>
+    filter(which_file==input$file)
+})
+
+renderUI({#need the render UI because the list of choices depends on the excel file
+selectInput(
+  "sheet",
+  "Select a sheet to compare",
+  unique(filtered()$sheet),
+  selected = unique(filtered()$sheet)[1]
+)
+})
+
+selectInput(
+  "year",
+  "Only consider data since",
+  2013:2023,
+  2013
+)
+```
+ 
+Column
+-------------------------------------
+    
+### `r renderUI({ paste(input$file, input$sheet, sep=": ")})`
+    
+```{r}
+plotly::renderPlotly({
+  temp <- joined|>
+    filter(which_file==input$file, 
+           sheet==input$sheet
+           )|>
+    pull(joined)
+  
+  temp[[1]]|>
+    filter(year>input$year)|>
+   pivot_wider(names_from = "year", values_from = "change")|>
+    column_to_rownames("variable")|>
+    remove_empty("rows")|>
+    heatmaply::heatmaply(dendrogram=FALSE)|>
+    plotly::config(displayModeBar = FALSE)
+})
+```
