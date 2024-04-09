@@ -1,0 +1,116 @@
+---
+title: "Stokes cut comparer"
+output: flexdashboard::flex_dashboard
+runtime: shiny
+resource_files:
+- out/joined.rds
+---
+
+```{r, include=FALSE}
+library(tidyverse)
+library(here)
+library(readxl)
+library(janitor)
+library(assertthat)
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+```
+
+```{r}
+joined <- read_rds(here("out","joined.rds"))
+files <- sort(unique(joined$which_file), decreasing = TRUE)
+```
+
+
+Inputs {.sidebar data-width=450}
+-------------------------------------
+
+*  This app allows one to visualize what has changed between Stokes cuts.
+*  Here we are looking at the difference between the 4th and 5th Macro cut of 2023.
+*  Note that the data series (rows) differ in several orders of magnitude in terms of their minimum absolute value.
+*  For series with a large minimum absolute value, we calculate the percentage difference between the cuts:
+$$difference=(new~value/original~value-1)\times100$$
+*  For series with a small minimum absolute value, we subtract the original value from the new value:
+$$difference = new~value - original~value$$
+*  Doing so puts all series on a similar scale, allowing us to use a heatmap to identify the significant changes between cuts.
+*  You can hover over the cells of the heatmap to get more details.
+
+
+```{r}
+selectInput(
+  "file",
+  "Select an excel file to compare",
+  files,
+  selected = files[1]
+)
+
+filtered <- reactive({
+  joined|>
+    filter(which_file==input$file)
+})
+
+renderUI({#need the render UI because the list of choices depends on the excel file
+selectInput(
+  "sheet",
+  "Select a sheet to compare",
+  unique(filtered()$sheet),
+  selected = unique(filtered()$sheet)[1]
+)
+})
+
+selectInput(
+  "year",
+  "Only consider data since",
+  2013:2023,
+  2013
+)
+
+numericInput(
+  "minimum",
+  "Minimum absolute value threshold",
+  10,
+  min = 1,
+  max = 100,
+  step = 1
+)
+
+reactive_tbbl <- reactive({
+  temp <- joined|>
+    filter(which_file==input$file, 
+           sheet==input$sheet
+           )|>
+    pull(joined)
+  
+  temp[[1]]|>
+    filter(year>input$year)|>
+    group_by(variable)|>
+    mutate(original=if_else(min(abs(original_value)) < input$minimum, "small", "large"),
+           change=if_else(original=="small", 
+                          new_value-original_value, 
+                          (new_value/original_value-1)*100))|>
+    select(-new_value, -original_value, -original)|>
+    pivot_wider(names_from = "year", values_from = "change")|>
+    column_to_rownames("variable")|>
+    remove_empty("rows")
+})
+
+reactive_show_labels <- reactive({
+  if_else(nrow(reactive_tbbl())<80, TRUE, FALSE)
+})
+```
+ 
+Column
+-------------------------------------
+    
+### `r renderUI({ paste(input$file, input$sheet, sep=": ")})`
+    
+```{r}
+plotly::renderPlotly({
+    heatmaply::heatmaply(reactive_tbbl(), 
+                         dendrogram=FALSE, 
+                         key.title="% Difference", 
+                         fontsize_row = 8, 
+                         showticklabels = c(TRUE, reactive_show_labels()))|>
+    plotly::config(displayModeBar = FALSE)
+})
+```
