@@ -22,7 +22,9 @@ library(htmlwidgets) #for function onRender
 conflicts_prefer(dplyr::filter)
 options(scipen = 999)
 #functions-----------------------
-cagr_plot <- function(tbbl, xvar, yvar){
+cagr_plot <- function(tbbl, xvar, yvar, highlight_industry){
+  filtered <- tbbl|>
+    filter(industry==highlight_industry)
   plt <- ggplot(cagrs, aes({{  xvar  }}, {{  yvar  }},
                          text=paste0("Industry: ",
                                      industry,
@@ -31,6 +33,7 @@ cagr_plot <- function(tbbl, xvar, yvar){
                                      "\n Stokes CAGR = ",
                                      scales::percent({{  yvar  }}, accuracy = .1))))+
   geom_abline(slope=1, intercept = 0, colour="white", lwd=1.5)+
+  geom_point(data=filtered, size=4, colour="red", alpha=.5)+    
   geom_point(alpha=.5)+
   scale_x_continuous(labels=scales::percent)+
   scale_y_continuous(labels=scales::percent)+
@@ -199,29 +202,46 @@ Column
 ### % change from internal forecast to stokes forecast
     
 ```{r}
-internal_vs_stokes|>
+
+js2 <- "
+function(el, x) {
+  el.on('plotly_click', function(d) {
+    var point = d.points[0];
+    Shiny.setInputValue('point2', {y: point.y});
+  });
+}"
+
+temp <- internal_vs_stokes|>
   mutate(stokes_percent_change=round((stokes_cut/internal-1)*100,2))|>
   select(industry, name, stokes_percent_change)|>
   filter(name>2023)|>
   pivot_wider(id_cols = industry, names_from = "name", values_from = "stokes_percent_change")|>
-  column_to_rownames("industry")|>
-  heatmaply::heatmaply(dendrogram=FALSE, key.title="% change", showticklabels = c(TRUE, FALSE))
+  column_to_rownames("industry")
+
+  heatmaply::heatmaply(temp, dendrogram=FALSE, key.title="% change", showticklabels = c(TRUE, FALSE))|>
+  onRender(js2)
 ```
  
 Column
 ------------------------------------- 
  
-### First five year CAGRs
+### First five year CAGRs 
     
 ```{r}
-cagr_plot(cagrs, internal_cagr_ffy, stokes_cagr_ffy)
+plotly::renderPlotly({
+req(input$point2)  
+cagr_plot(cagrs, internal_cagr_ffy, stokes_cagr_ffy, rev(rownames(temp))[input$point2$y])
+})  
 ``` 
 
 
 ### Second five year CAGRs
     
 ```{r}
-cagr_plot(cagrs, internal_cagr_sfy, stokes_cagr_sfy)
+plotly::renderPlotly({
+req(input$point2)    
+cagr_plot(cagrs, internal_cagr_sfy, stokes_cagr_sfy, rev(rownames(temp))[input$point2$y])
+})  
 ```
 
 Column
@@ -230,38 +250,16 @@ Column
 ### Ten year CAGRs
 
 ```{r}
-cagr_plot(cagrs, internal_cagr_ty, stokes_cagr_ty)
+plotly::renderPlotly({
+req(input$point2)    
+cagr_plot(cagrs, internal_cagr_ty, stokes_cagr_ty, rev(rownames(temp))[input$point2$y])
+})  
 ```
 
-### A high standard deviation may indicate weird forecast shape...
+### `r renderUI({rev(rownames(temp))[input$point2$y]})` relative to LFS Data
+
 
 ```{r}
-plt <- internal_vs_stokes|>
-  group_by(industry)|>
-  summarise(mean_growth=mean(stokes_growth, na.rm = TRUE),
-            sd_growth=sd(stokes_growth, na.rm=TRUE)
-            )|>
-  ggplot(aes(mean_growth, sd_growth, text=industry))+
-  geom_point(alpha=.5)+
-  labs(x="Mean annual growth rate",
-       y="Standard deviation growth rate")
-plotly::ggplotly(plt, tooltip = "text")
-```
-
-Relative to LFS Data
-===================================== 
-
-Inputs {.sidebar}
--------------------------------------
-
-```{r}
-selectInput(
-  "industry",
-  "Select an industry",
-  unique(internal_vs_stokes$industry),
-  selected = unique(internal_vs_stokes$industry)[1]
-)
-
 reactive_tbbl2 <- reactive({
  internal_vs_stokes|>
     mutate(date=ymd(paste(name,"06","15", sep="-")))|>
@@ -269,38 +267,30 @@ reactive_tbbl2 <- reactive({
     select(-name, -stokes_growth)|>
     pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
     full_join(lfs_data)|>
-    filter(industry==input$industry)
+    filter(industry==rev(rownames(temp))[input$point2$y])
 })
 
 reactive_lfs_last_year <- reactive({
   lfs_data|>
-    filter(industry==input$industry)|>
+    filter(industry==rev(rownames(temp))[input$point2$y])|>
     group_by(industry)|>
     slice_max(date, n=12)|>
     mutate(value=mean(value))|>
     mutate(series="Last 12 month average of LFS")
 })
 
-
-```
-
-Column
-------------------------------------- 
-
-### `r renderUI({input$industry})`
-
-
-```{r, fig.retina=2, fig.width=18, fig.height=8}
 plotly::renderPlotly({
+  req(input$point2) 
   plt <- ggplot(reactive_tbbl2(), aes(date, value, colour=series))+
     geom_line()+
     geom_line(data=reactive_lfs_last_year())+
-    scale_y_continuous(trans="log10", labels = scales::comma)+
+    scale_y_continuous(labels = scales::comma)+
     scale_colour_brewer(palette = "Dark2")+
     labs(x=NULL,
          y=NULL,
          colour=NULL)
-  plotly::ggplotly(plt)
+  plotly::ggplotly(plt)|>
+    plotly::layout(legend = list(orientation = "h", x = 0.4, y = -0.2))
 })
 ```
 
