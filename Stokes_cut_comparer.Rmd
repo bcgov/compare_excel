@@ -1,9 +1,15 @@
 ---
 title: "Stokes cut comparer"
-output: flexdashboard::flex_dashboard
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
 runtime: shiny
 resource_files:
 - out/joined.rds
+- out/cagrs.rds
+- out/internal_vs_stokes.rds
+- data/lmo64_agg_stokes_mapping.csv
+- out/lfs_data.csv
 ---
 
 ```{r, include=FALSE}
@@ -13,25 +19,50 @@ library(readxl)
 library(janitor)
 library(assertthat)
 library(conflicted)
+library(htmlwidgets)
 conflicts_prefer(dplyr::filter)
+options(scipen = 999)
+#functions-----------------------
+cagr_plot <- function(tbbl, xvar, yvar){
+  plt <- ggplot(cagrs, aes({{  xvar  }}, {{  yvar  }},
+                         text=paste0("Industry: ",
+                                     industry,
+                                     "\n Internal CAGR = ",
+                                     scales::percent({{  xvar  }}, accuracy = .1),
+                                     "\n Stokes CAGR = ",
+                                     scales::percent({{  yvar  }}, accuracy = .1))))+
+  geom_abline(slope=1, intercept = 0, colour="white", lwd=1.5)+
+  geom_point(alpha=.5)+
+  scale_x_continuous(labels=scales::percent)+
+  scale_y_continuous(labels=scales::percent)+
+  labs(x="internal forecast",
+       y="stokes forecast")
+  plotly::ggplotly(plt, tooltip="text")
+}
 ```
 
 ```{r}
 joined <- read_rds(here("out","joined.rds"))
+internal_vs_stokes <- read_rds(here("out","internal_vs_stokes.rds"))
+cagrs <- read_rds(here("out","cagrs.rds"))
+mapping <- read_csv(here("data","lmo64_agg_stokes_mapping.csv"))
+lfs_data <- read_csv(here("out","lfs_data.csv"))
 files <- sort(unique(joined$which_file), decreasing = TRUE)
 ```
 
+Comparison with previous cut
+=====================================  
 
-Inputs {.sidebar data-width=450}
+Inputs {.sidebar data-width=400}
 -------------------------------------
 
-*  This app allows one to visualize what has changed between Stokes cuts.
+*  This app allows one to visualize what has changed between Stokes cuts, and how employment compares with our internal forecast.
 *  Here we are looking at the difference between the 4th and 5th Macro cut of 2023.
 *  Note that the data series (rows) differ in several orders of magnitude in terms of their minimum absolute value.
-*  For series with a large minimum absolute value, we calculate the percentage difference between the cuts:
-$$difference=(new~value/original~value-1)\times100$$
-*  For series with a small minimum absolute value, we subtract the original value from the new value:
-$$difference = new~value - original~value$$
+*  For series with a large $\min(|original~value|)$, we calculate the percentage change between the cuts:
+$$change=\frac{new~value-original~value}{|original~value|}\times100$$
+*  For series with a small $min(|original~value|)$, we subtract the original value from the new value:
+$$change = new~value - original~value$$
 *  Doing so puts all series on a similar scale, allowing us to use a heatmap to identify the significant changes between cuts.
 *  You can hover over the cells of the heatmap to get more details.
 
@@ -58,16 +89,16 @@ selectInput(
 )
 })
 
-selectInput(
-  "year",
-  "Only consider data since",
-  2013:2023,
-  2013
-)
+# selectInput(
+#   "year",
+#   "Only consider data since",
+#   2013:2023,
+#   2013
+# )
 
 numericInput(
   "minimum",
-  "Minimum absolute value threshold",
+  "min(|original value|) threshold",
   10,
   min = 1,
   max = 100,
@@ -82,12 +113,13 @@ reactive_tbbl <- reactive({
     pull(joined)
   
   temp[[1]]|>
-    filter(year>input$year)|>
+    #filter(year>input$year)|>
+    filter(year>=year(today()))|>
     group_by(variable)|>
     mutate(original=if_else(min(abs(original_value)) < input$minimum, "small", "large"),
            change=if_else(original=="small", 
                           new_value-original_value, 
-                          (new_value/original_value-1)*100))|>
+                          (new_value-original_value)/abs(original_value)*100))|>
     select(-new_value, -original_value, -original)|>
     pivot_wider(names_from = "year", values_from = "change")|>
     column_to_rownames("variable")|>
@@ -99,18 +131,175 @@ reactive_show_labels <- reactive({
 })
 ```
  
-Column
+Column {data-width=600}
 -------------------------------------
     
 ### `r renderUI({ paste(input$file, input$sheet, sep=": ")})`
     
 ```{r}
+js <- "
+function(el, x) {
+  el.on('plotly_click', function(d) {
+    var point = d.points[0];
+    Shiny.setInputValue('point', {y: point.y});
+  });
+}"
+
 plotly::renderPlotly({
     heatmaply::heatmaply(reactive_tbbl(), 
                          dendrogram=FALSE, 
-                         key.title="% Difference", 
+                         key.title="Change between cuts", 
                          fontsize_row = 8, 
                          showticklabels = c(TRUE, reactive_show_labels()))|>
-    plotly::config(displayModeBar = FALSE)
+    plotly::config(displayModeBar = FALSE)|>
+    onRender(js)
 })
 ```
+
+Column {data-width=400}
+-------------------------------------
+
+### Click on heatmap to show the row
+
+```{r}
+plotly::renderPlotly({
+  req(input$point)
+  reactive_tbbl()|>
+    rownames_to_column("thing")|>
+    pivot_longer(cols = -thing)|>
+    filter(thing==rev(rownames(reactive_tbbl()))[input$point$y])|>
+    ggplot(aes(value, name))+
+    geom_col()
+})
+```
+
+
+
+Comparison with internal employment forecast
+=====================================  
+
+Column
+-------------------------------------
+    
+### % change from internal forecast to stokes forecast
+    
+```{r}
+internal_vs_stokes|>
+  mutate(stokes_percent_change=round((stokes_cut/internal-1)*100,2))|>
+  select(industry, name, stokes_percent_change)|>
+  filter(name>2023)|>
+  pivot_wider(id_cols = industry, names_from = "name", values_from = "stokes_percent_change")|>
+  column_to_rownames("industry")|>
+  heatmaply::heatmaply(dendrogram=FALSE, key.title="% change", showticklabels = c(TRUE, FALSE))
+```
+ 
+Column
+------------------------------------- 
+ 
+### First five year CAGRs
+    
+```{r}
+cagr_plot(cagrs, internal_cagr_ffy, stokes_cagr_ffy)
+``` 
+
+
+### Second five year CAGRs
+    
+```{r}
+cagr_plot(cagrs, internal_cagr_sfy, stokes_cagr_sfy)
+```
+
+Column
+------------------------------------- 
+
+### Ten year CAGRs
+
+```{r}
+cagr_plot(cagrs, internal_cagr_ty, stokes_cagr_ty)
+```
+
+### A high standard deviation may indicate weird forecast shape...
+
+```{r}
+plt <- internal_vs_stokes|>
+  group_by(industry)|>
+  summarise(mean_growth=mean(stokes_growth, na.rm = TRUE),
+            sd_growth=sd(stokes_growth, na.rm=TRUE)
+            )|>
+  ggplot(aes(mean_growth, sd_growth, text=industry))+
+  geom_point(alpha=.5)+
+  labs(x="Mean annual growth rate",
+       y="Standard deviation growth rate")
+plotly::ggplotly(plt, tooltip = "text")
+```
+
+Relative to LFS Data
+===================================== 
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+selectInput(
+  "industry",
+  "Select an industry",
+  unique(internal_vs_stokes$industry),
+  selected = unique(internal_vs_stokes$industry)[1]
+)
+
+reactive_tbbl2 <- reactive({
+ internal_vs_stokes|>
+    mutate(date=ymd(paste(name,"06","15", sep="-")))|>
+    filter(date>today())|>
+    select(-name, -stokes_growth)|>
+    pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
+    full_join(lfs_data)|>
+    filter(industry==input$industry)
+})
+
+reactive_lfs_last_year <- reactive({
+  lfs_data|>
+    filter(industry==input$industry)|>
+    group_by(industry)|>
+    slice_max(date, n=12)|>
+    mutate(value=mean(value))|>
+    mutate(series="Last 12 month average of LFS")
+})
+
+
+```
+
+Column
+------------------------------------- 
+
+### `r renderUI({input$industry})`
+
+
+```{r, fig.retina=2, fig.width=18, fig.height=8}
+plotly::renderPlotly({
+  plt <- ggplot(reactive_tbbl2(), aes(date, value, colour=series))+
+    geom_line()+
+    geom_line(data=reactive_lfs_last_year())+
+    scale_y_continuous(trans="log10", labels = scales::comma)+
+    scale_colour_brewer(palette = "Dark2")+
+    labs(x=NULL,
+         y=NULL,
+         colour=NULL)
+  plotly::ggplotly(plt)
+})
+```
+
+
+Mapping from LMO industries to Stokes industries
+===================================== 
+
+```{r}
+DT::datatable(mapping, rownames = FALSE, options = list(paging = FALSE))
+```
+
+
+
+
+
+
+
