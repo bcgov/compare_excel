@@ -64,7 +64,7 @@ $$change=\frac{new~value-original~value}{|original~value|}\times100$$
 *  For series with a small $min(|original~value|)$, we subtract the original value from the new value:
 $$change = new~value - original~value$$
 *  Doing so puts all series on a similar scale, allowing us to use a heatmap to identify the significant changes between cuts.
-*  You can hover over the cells of the heatmap to get more details.
+*  You can **CLICK** on a row in the heatmap to see the underlying data.
 
 
 ```{r}
@@ -89,13 +89,6 @@ selectInput(
 )
 })
 
-# selectInput(
-#   "year",
-#   "Only consider data since",
-#   2013:2023,
-#   2013
-# )
-
 numericInput(
   "minimum",
   "min(|original value|) threshold",
@@ -105,7 +98,7 @@ numericInput(
   step = 1
 )
 
-reactive_tbbl <- reactive({
+reactive_base <- reactive({
   temp <- joined|>
     filter(which_file==input$file, 
            sheet==input$sheet
@@ -113,25 +106,30 @@ reactive_tbbl <- reactive({
     pull(joined)
   
   temp[[1]]|>
-    #filter(year>input$year)|>
     filter(year>=year(today()))|>
     group_by(variable)|>
     mutate(original=if_else(min(abs(original_value)) < input$minimum, "small", "large"),
            change=if_else(original=="small", 
                           new_value-original_value, 
-                          (new_value-original_value)/abs(original_value)*100))|>
+                          (new_value-original_value)/abs(original_value)*100),
+           change=round(change,3)
+           )
+})
+  
+ reactive_tbbl <- reactive({
+   reactive_base()|>
     select(-new_value, -original_value, -original)|>
     pivot_wider(names_from = "year", values_from = "change")|>
     column_to_rownames("variable")|>
     remove_empty("rows")
-})
+ })
 
 reactive_show_labels <- reactive({
   if_else(nrow(reactive_tbbl())<80, TRUE, FALSE)
 })
 ```
  
-Column {data-width=600}
+Column {data-width=550}
 -------------------------------------
     
 ### `r renderUI({ paste(input$file, input$sheet, sep=": ")})`
@@ -156,20 +154,38 @@ plotly::renderPlotly({
 })
 ```
 
-Column {data-width=400}
+Column {data-width=450}
 -------------------------------------
 
-### Click on heatmap to show the row
+### A plot of the original and new values of row...
 
 ```{r}
 plotly::renderPlotly({
   req(input$point)
-  reactive_tbbl()|>
-    rownames_to_column("thing")|>
-    pivot_longer(cols = -thing)|>
-    filter(thing==rev(rownames(reactive_tbbl()))[input$point$y])|>
-    ggplot(aes(value, name))+
-    geom_col()
+  plt <- reactive_base()|>
+    filter(variable==rev(rownames(reactive_tbbl()))[input$point$y])|>
+    ungroup()|>
+    select(year, new_value, original_value)|>
+    pivot_longer(cols = -year)|>
+    mutate(year=as.numeric(year))|>
+    ggplot(aes(year,value, colour=name))+
+    geom_line()+
+    labs(title=rev(rownames(reactive_tbbl()))[input$point$y])
+  plotly::ggplotly(plt)
+})
+```
+
+
+### The data:
+
+```{r}
+#plotly::renderPlotly({
+DT::renderDT({ 
+  req(input$point)
+  reactive_base()|>
+    filter(variable==rev(rownames(reactive_tbbl()))[input$point$y])|>
+    select(year, new_value, original_value, change)|>
+    DT::datatable( rownames = FALSE)
 })
 ```
 
