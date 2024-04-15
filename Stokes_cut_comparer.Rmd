@@ -22,6 +22,29 @@ library(htmlwidgets) #for function onRender
 conflicts_prefer(dplyr::filter)
 options(scipen = 999)
 #functions-----------------------
+my_dt <- function(tbbl) {
+  DT::datatable(tbbl,
+                extensions = "Buttons",
+                rownames = FALSE,
+                filter="top",
+                options = list(
+                  columnDefs = list(list(className = "dt-center", targets = "_all")),
+                  paging = TRUE,
+                  scrollX = TRUE,
+                  scrollY = TRUE,
+                  searching = TRUE,
+                  ordering = TRUE,
+                  dom = "Btip",
+                  buttons = list(
+                    list(extend = "csv", filename = "top_5_cor_education"),
+                    list(extend = "excel", filename = "top_5_cor_education")
+                  ),
+                  pageLength = 64,
+                  lengthMenu = c(3, 5)
+                )
+  )
+}
+
 cagr_plot <- function(tbbl, xvar, yvar, highlight_industry){
   filtered <- tbbl|>
     filter(industry==highlight_industry)
@@ -146,6 +169,9 @@ function(el, x) {
 }"
 
 plotly::renderPlotly({
+  req(input$file)
+  req(input$sheet)
+  req(input$minimum)
     heatmaply::heatmaply(reactive_tbbl(), 
                          dendrogram=FALSE, 
                          key.title="Change between cuts", 
@@ -199,7 +225,7 @@ Comparison with internal employment forecast
 Column
 -------------------------------------
     
-### % change from internal forecast to stokes forecast
+### % change from internal to stokes:  **CLICK** on row to choose industry
     
 ```{r}
 
@@ -299,7 +325,7 @@ Mapping from LMO industries to Stokes industries
 ===================================== 
 
 ```{r}
-DT::datatable(mapping, rownames = FALSE, options = list(paging = FALSE))
+my_dt(mapping)
 ```
 
 
