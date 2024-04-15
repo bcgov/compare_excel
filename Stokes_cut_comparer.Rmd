@@ -300,15 +300,16 @@ reactive_lfs_last_year <- reactive({
   lfs_data|>
     filter(industry==rev(rownames(temp))[input$point2$y])|>
     group_by(industry)|>
-    slice_max(date, n=12)|>
-    mutate(value=mean(value))|>
-    mutate(series="Last 12 month average of LFS")
+#    slice_max(date, n=12)|>
+#    mutate(value=mean(value))|>
+    mutate(value=zoo::rollmean(value, 12, align = "right", fill=NA),
+           series="12 month rolling mean of LFS")
 })
 
 plotly::renderPlotly({
   req(input$point2) 
   plt <- ggplot(reactive_tbbl2(), aes(date, value, colour=series))+
-    geom_line()+
+    geom_line(alpha=.5)+
     geom_line(data=reactive_lfs_last_year())+
     scale_y_continuous(labels = scales::comma)+
     scale_colour_brewer(palette = "Dark2")+

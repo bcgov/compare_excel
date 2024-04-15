@@ -1,6 +1,6 @@
 #' you need to set the cut type:
-cut <- "macro"
-#cut <- "industry"
+#cut <- "macro"
+cut <- "industry"
 start_year <- lubridate::year(lubridate::today())-1 #get rid of -1 once we have this years data
 start_of_current_month <- lubridate::ym(tsibble::yearmonth(lubridate::today()))
 #' NOTE: the files that are being compared need to be quite similar:
@@ -167,8 +167,9 @@ write_rds(cagrs, here("out","cagrs.rds"))
 
 naics_to_lmo_mapping <- read_csv(here("data","tidy_2024_naics_to_lmo.csv"))
 
+lfs_files <- list.files(here("data"), pattern = "lfsstat4digNAICS")
 
-lfs_data <- read_csv(here("data","lfsstat4digNAICS.csv"))|>
+lfs_data <- vroom::vroom(here("data", lfs_files))|>
   na.omit()|>
   filter(LF_STAT=="Employed")|>
   inner_join(naics_to_lmo_mapping, by=c("NAICS_5"="naics"))|>
