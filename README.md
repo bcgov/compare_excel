@@ -10,22 +10,13 @@ compare_excel
 
 ### Usage
 
-Describe data being used (links), and how to run. Eg:
-
-There are four core scripts that are required for the analysis, they need to be run in order:
-
--   01\_clean.R
--   02\_analysis.R
--   03\_visualize.R
--   04\_output.R
+1) Place excel files in appropriate folders. 
+1) source the file 01_pre_process.R 
+2) run document Stokes_cut_comarpare.Rmd
 
 #### Example
 
-This is a basic example which shows you how to solve a common problem:
 
-``` r
-## basic example code
-```
 
 ### Project Status
 
