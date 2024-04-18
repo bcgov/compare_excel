@@ -144,6 +144,11 @@ reactive_show_labels <- reactive({
 })
 ```
  
+ 
+ Source code: [![github logo](github.png){width=100px}](https://github.com/bcgov/compare_excel){target='_blank'}
+ 
+ 
+ 
 Column {data-width=550}
 -------------------------------------
     
