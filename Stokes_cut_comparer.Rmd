@@ -14,6 +14,7 @@ resource_files:
 
 ```{r, include=FALSE}
 library(tidyverse)
+start_year <- today()-years(1) # get rid of -1 once we have this year's data
 library(here)
 library(readxl)
 library(janitor)
@@ -21,6 +22,7 @@ library(conflicted)
 library(htmlwidgets) #for function onRender
 conflicts_prefer(dplyr::filter)
 options(scipen = 999)
+min_abs_original <- 10
 #functions-----------------------
 my_dt <- function(tbbl) {
   DT::datatable(tbbl,
@@ -82,14 +84,11 @@ Inputs {.sidebar data-width=400}
 -------------------------------------
 
 *  This app allows one to visualize what has changed between Stokes cuts, and how employment compares with our internal forecast.
-*  Here we are looking at the difference between the 4th and 5th Macro cut of 2023.
-*  Note that the data series (rows) differ in several orders of magnitude in terms of their minimum absolute value.
-*  For series with a large $\min(|original~value|)$, we calculate the percentage change between the cuts:
-$$change=\frac{new~value-original~value}{|original~value|}\times100$$
-*  For series with a small $min(|original~value|)$, we subtract the original value from the new value:
-$$change = new~value - original~value$$
-*  Doing so puts all series on a similar scale, allowing us to use a heatmap to identify the significant changes between cuts.
+*  The heatmap on this page illustrates the degree of difference between the 4th and 5th macro cut of 2023.
+*  Dark colours indicate little difference between cuts:  yellow indicates a (relatively) large difference.
+*  You can zoom in by highlighting (click-dragging) a region of the heatmap. 
 *  You can **CLICK** on a row in the heatmap to see the underlying data.
+*  To zoom back out double click anywhere in the heatmap.
 
 
 ```{r}
@@ -114,15 +113,6 @@ selectInput(
 )
 })
 
-numericInput(
-  "minimum",
-  "min(|original value|) threshold",
-  10,
-  min = 1,
-  max = 100,
-  step = 1
-)
-
 reactive_base <- reactive({
   temp <- joined|>
     filter(which_file==input$file, 
@@ -133,11 +123,11 @@ reactive_base <- reactive({
   temp[[1]]|>
     filter(year>=year(today()))|>
     group_by(variable)|>
-    mutate(original=if_else(min(abs(original_value)) < input$minimum, "small", "large"),
+    mutate(original=if_else(min(abs(original_value)) < min_abs_original, "small", "large"),
            change=if_else(original=="small", 
                           new_value-original_value, 
                           (new_value-original_value)/abs(original_value)*100),
-           change=round(change,3)
+           change=round(log10(abs(change)+1),3)
            )
 })
   
@@ -171,10 +161,9 @@ function(el, x) {
 plotly::renderPlotly({
   req(input$file)
   req(input$sheet)
-  req(input$minimum)
-    heatmaply::heatmaply(reactive_tbbl(), 
+  heatmaply::heatmaply(reactive_tbbl(), 
                          dendrogram=FALSE, 
-                         key.title="Change between cuts", 
+                         key.title="Degree of Difference", 
                          fontsize_row = 8, 
                          showticklabels = c(TRUE, reactive_show_labels()))|>
     plotly::config(displayModeBar = FALSE)|>
@@ -225,7 +214,7 @@ Comparison with internal employment forecast
 Column
 -------------------------------------
     
-### % change from internal to stokes:  **CLICK** on row to choose industry
+### Degree of difference between internal and stokes:  **CLICK** on row to choose industry
     
 ```{r}
 
@@ -238,13 +227,14 @@ function(el, x) {
 }"
 
 temp <- internal_vs_stokes|>
-  mutate(stokes_percent_change=round((stokes_cut/internal-1)*100,2))|>
-  select(industry, name, stokes_percent_change)|>
+  mutate(change=(stokes_cut/internal-1)*100,
+         degree_of_difference=round(log10(abs(change)+1),3))|>
+  select(industry, name, degree_of_difference)|>
   filter(name>2023)|>
-  pivot_wider(id_cols = industry, names_from = "name", values_from = "stokes_percent_change")|>
+  pivot_wider(id_cols = industry, names_from = "name", values_from = "degree_of_difference")|>
   column_to_rownames("industry")
 
-  heatmaply::heatmaply(temp, dendrogram=FALSE, key.title="% change", showticklabels = c(TRUE, FALSE))|>
+  heatmaply::heatmaply(temp, dendrogram=FALSE, key.title="Degree of Difference", showticklabels = c(TRUE, FALSE))|>
   onRender(js2)
 ```
  
@@ -289,7 +279,7 @@ cagr_plot(cagrs, internal_cagr_ty, stokes_cagr_ty, rev(rownames(temp))[input$poi
 reactive_tbbl2 <- reactive({
  internal_vs_stokes|>
     mutate(date=ymd(paste(name,"06","15", sep="-")))|>
-    filter(date>today())|>
+    filter(date>start_year)|>
     select(-name, -stokes_growth)|>
     pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
     full_join(lfs_data)|>
@@ -300,8 +290,6 @@ reactive_lfs_last_year <- reactive({
   lfs_data|>
     filter(industry==rev(rownames(temp))[input$point2$y])|>
     group_by(industry)|>
-#    slice_max(date, n=12)|>
-#    mutate(value=mean(value))|>
     mutate(value=zoo::rollmean(value, 12, align = "right", fill=NA),
            series="12 month rolling mean of LFS")
 })

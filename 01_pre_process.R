@@ -1,6 +1,6 @@
 #' you need to set the cut type:
-#cut <- "macro"
-cut <- "industry"
+cut <- "macro"
+#cut <- "industry"
 start_year <- lubridate::year(lubridate::today())-1 #get rid of -1 once we have this years data
 start_of_current_month <- lubridate::ym(tsibble::yearmonth(lubridate::today()))
 #' NOTE: the files that are being compared need to be quite similar:
