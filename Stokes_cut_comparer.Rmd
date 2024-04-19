@@ -10,6 +10,9 @@ resource_files:
 - out/internal_vs_stokes.rds
 - data/lmo64_agg_stokes_mapping.csv
 - out/lfs_data.csv
+- out/industry_shares.csv
+- out/region_shares.csv
+- github.png
 ---
 
 ```{r, include=FALSE}
@@ -24,6 +27,14 @@ conflicts_prefer(dplyr::filter)
 options(scipen = 999)
 min_abs_original <- 10
 #functions-----------------------
+share_plot <- function(tbbl, facet_var){
+  ggplot(tbbl, aes(year, share, colour=source))+
+    geom_line()+
+    scale_y_continuous(labels = scales::percent)+
+    facet_wrap(~fct_reorder(get(facet_var), share, .desc = TRUE), scales = "free")+
+    labs(x=NULL,y=NULL)
+}
+
 my_dt <- function(tbbl) {
   DT::datatable(tbbl,
                 extensions = "Buttons",
@@ -74,6 +85,8 @@ internal_vs_stokes <- read_rds(here("out","internal_vs_stokes.rds"))
 cagrs <- read_rds(here("out","cagrs.rds"))
 mapping <- read_csv(here("data","lmo64_agg_stokes_mapping.csv"))
 lfs_data <- read_csv(here("out","lfs_data.csv"))
+industry_shares <- read_csv(here("out","industry_shares.csv"))
+region_shares <- read_csv(here("out","region_shares.csv"))
 files <- sort(unique(joined$which_file), decreasing = TRUE)
 ```
 
@@ -314,6 +327,25 @@ plotly::renderPlotly({
 })
 ```
 
+Region Shares
+===================================== 
+
+```{r, fig.width=16, fig.height=12, fig.retina=2}
+share_plot(region_shares, "bc_region")+ 
+    theme(text=element_text(size=20))
+```
+
+Industry Shares
+=====================================  
+
+```{r, fig.retina=2}
+renderPlot({
+  share_plot(industry_shares, "industry")+ 
+    theme(text=element_text(size=20))
+})
+```
+
+
 
 Mapping from LMO industries to Stokes industries
 ===================================== 
@@ -321,10 +353,6 @@ Mapping from LMO industries to Stokes industries
 ```{r}
 my_dt(mapping)
 ```
-
-
-
-
 
 
 
