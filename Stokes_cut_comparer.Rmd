@@ -32,7 +32,8 @@ share_plot <- function(tbbl, facet_var){
     geom_line()+
     scale_y_continuous(labels = scales::percent)+
     facet_wrap(~fct_reorder(get(facet_var), share, .desc = TRUE), scales = "free")+
-    labs(x=NULL,y=NULL)
+    labs(x=NULL,y=NULL)+
+  theme(text = element_text(size = 14), legend.position = "bottom")
 }
 
 my_dt <- function(tbbl) {
@@ -85,7 +86,8 @@ internal_vs_stokes <- read_rds(here("out","internal_vs_stokes.rds"))
 cagrs <- read_rds(here("out","cagrs.rds"))
 mapping <- read_csv(here("data","lmo64_agg_stokes_mapping.csv"))
 lfs_data <- read_csv(here("out","lfs_data.csv"))
-industry_shares <- read_csv(here("out","industry_shares.csv"))
+industry_shares <- read_csv(here("out","industry_shares.csv"))|>
+  mutate(industry=str_trunc(industry, 30, "right"))
 region_shares <- read_csv(here("out","region_shares.csv"))
 files <- sort(unique(joined$which_file), decreasing = TRUE)
 ```
@@ -340,8 +342,7 @@ Industry Shares
 
 ```{r, fig.retina=2}
 renderPlot({
-  share_plot(industry_shares, "industry")+ 
-    theme(text=element_text(size=20))
+  share_plot(industry_shares, "industry")
 })
 ```
 

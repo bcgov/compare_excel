@@ -24,15 +24,15 @@ conflicts_prefer(dplyr::lag)
 if(cut=="macro"){
   new_folder = "macro_new"
   old_folder = "macro_old"
-  pattern = "BritishColumbiaTables"
-  sheet = "Labour Market"
+  pattern = "BritishColumbiaTables" #this is for comparing stokes to internal
+  sheet = "Labour Market" #this is for comparing stokes to internal
   skip = 2
   numeric_columns = 24
 }else if(cut=="industry"){
   new_folder = "industry_new"
   old_folder = "industry_old"
-  pattern = "IndustryEmploymentBC"
-  sheet = "BC"
+  pattern = "IndustryEmploymentBC"#this is for comparing stokes to internal
+  sheet = "BC"#this is for comparing stokes to internal
   skip = 1
   numeric_columns = 22
 }else{
