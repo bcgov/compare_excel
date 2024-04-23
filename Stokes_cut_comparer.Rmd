@@ -99,7 +99,7 @@ Inputs {.sidebar data-width=400}
 -------------------------------------
 
 *  This app allows one to visualize what has changed between Stokes cuts, and how employment compares with our internal forecast.
-*  The heatmap on this page illustrates the degree of difference between the 4th and 5th macro cut of 2023.
+*  The heatmap on this page illustrates the degree of difference between the final macro cut of 2023 and the first macro cut of 2024.
 *  Dark colours indicate little difference between cuts:  yellow indicates a (relatively) large difference.
 *  You can zoom in by highlighting (click-dragging) a region of the heatmap. 
 *  You can **CLICK** on a row in the heatmap to see the underlying data.
@@ -329,22 +329,73 @@ plotly::renderPlotly({
 })
 ```
 
-Region Shares
+Regional shares by industry
 ===================================== 
 
-```{r, fig.width=16, fig.height=12, fig.retina=2}
-share_plot(region_shares, "bc_region")+ 
-    theme(text=element_text(size=20))
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+selectInput(
+  "industry",
+  "Select an industry",
+  unique(region_shares$industry),
+  selected = unique(region_shares$industry)[1]
+)
 ```
 
-Industry Shares
-=====================================  
+Column 
+------------------------------------- 
 
-```{r, fig.retina=2}
-renderPlot({
-  share_plot(industry_shares, "industry")
+### `r renderUI({input$industry})`
+
+```{r}
+plotly::renderPlotly({
+  plt <- region_shares|>
+    filter(industry==input$industry)|>
+    mutate(bc_region=fct_reorder(bc_region, share, max, .desc = TRUE))|>
+    ggplot(aes(year, share, colour=source))+
+    geom_line()+
+    scale_y_continuous(labels=scales::percent)+
+    facet_wrap(~bc_region, scales = "free_y")
+plotly::ggplotly(plt)    
 })
 ```
+
+
+Industry shares by region
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+selectInput(
+  "region",
+  "Select a region",
+  unique(industry_shares$bc_region),
+  selected = unique(industry_shares$bc_region)[1]
+)
+```
+
+Column
+------------------------------------- 
+
+### `r renderUI({input$region})`
+
+```{r}
+plotly::renderPlotly({
+  plt <- industry_shares|>
+    filter(bc_region==input$region)|>
+    mutate(industry=fct_reorder(industry, share, max, .desc = TRUE))|>
+    ggplot(aes(year, share, colour=source))+
+    geom_line()+
+    scale_y_continuous(labels=scales::percent)+
+    facet_wrap(~industry, scales = "free_y")
+plotly::ggplotly(plt)    
+})
+```
+
 
 
 
