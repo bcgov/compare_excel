@@ -17,7 +17,7 @@ resource_files:
 
 ```{r, include=FALSE}
 library(tidyverse)
-start_year <- today()-years(1) # get rid of -1 once we have this year's data
+start_year <- today()
 library(here)
 library(readxl)
 library(janitor)
@@ -50,8 +50,8 @@ my_dt <- function(tbbl) {
                   ordering = TRUE,
                   dom = "Btip",
                   buttons = list(
-                    list(extend = "csv", filename = "top_5_cor_education"),
-                    list(extend = "excel", filename = "top_5_cor_education")
+                    list(extend = "csv", filename = "lmo_2_stokes_industry_mapping"),
+                    list(extend = "excel", filename = "lmo_2_stokes_industry_mapping")
                   ),
                   pageLength = 64,
                   lengthMenu = c(3, 5)

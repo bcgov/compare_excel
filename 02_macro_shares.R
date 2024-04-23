@@ -33,24 +33,40 @@ lfs_data <- read_csv(here("data","lfs_emp_by_reg_and_lmo64_long.csv"))|>
   rename(year=syear)|>
   full_join(mapping, by=c("lmo_ind_code","lmo_detailed_industry"="lmo_industry_name"))|>
   group_by(year)|>
-  mutate(bc_region=case_when(bc_region=="North Coast" ~ "North Coast and Nechako",#stokes aggregates these regions
-                             bc_region=="Nechako" ~ "North Coast and Nechako",
-                             TRUE ~ bc_region),
+  mutate(bc_region = case_when(bc_region=="North Coast" ~ "North Coast and Nechako",#stokes aggregates these regions
+                               bc_region=="Nechako" ~ "North Coast and Nechako",
+                               TRUE ~ bc_region),
          source="lfs")|>
   group_by(year, bc_region, industry=stokes_industry, source)|>
-  summarize(count=sum(count,na.rm = TRUE))
+  summarize(count=sum(count, na.rm = TRUE))
+
+lfs_region_bc <- lfs_data|>
+  group_by(year, industry, source)|>
+  summarize(count=sum(count, na.rm = TRUE))|>
+  mutate(bc_region="British Columbia")|>
+  group_by(year, source, bc_region, .add = FALSE)|>
+  mutate(share=count/sum(count, na.rm = TRUE))
 
 lfs_region <- lfs_data|>
   group_by(bc_region)|>
   nest()|>
   mutate(data=map(data, get_share))|>
-  unnest(data)
+  unnest(data)|>
+  full_join(lfs_region_bc)
+
+lfs_industry_all <- lfs_data|>
+  group_by(year, bc_region, source)|>
+  summarize(count=sum(count, na.rm = TRUE))|>
+  mutate(industry="All industries")|>
+  group_by(year, source, industry, .add=FALSE)|>
+  mutate(share=count/sum(count, na.rm = TRUE))
 
 lfs_industry <- lfs_data|>
   group_by(industry)|>
   nest()|>
   mutate(data=map(data, get_share))|>
-  unnest(data)
+  unnest(data)|>
+  full_join(lfs_industry_all)
 
 lfs_region_names <- lfs_region|>
   select(bc_region)|>
@@ -71,20 +87,36 @@ stokes <- tibble(bc_region=stokes_regional_files)|>
   fuzzyjoin::stringdist_full_join(lfs_region_names, by = "bc_region")|> #stokes has f'd up region names
   ungroup()|>
   rename(bc_region=bc_region.y)|>
-  select(-bc_region.x)
+  select(-bc_region.x)|>
+  na.omit()
 
+stokes_region_bc <- stokes|>
+  group_by(year, industry, source)|>
+  summarize(count=sum(count, na.rm = TRUE))|>
+  mutate(bc_region="British Columbia")|>
+  group_by(year, source, bc_region, .add=FALSE)|>
+  mutate(share=count/sum(count, na.rm = TRUE))
 
 stokes_region <- stokes|>
   group_by(bc_region)|>
   nest()|>
   mutate(data=map(data, get_share))|>
-  unnest(data)
+  unnest(data)|>
+  full_join(stokes_region_bc)
+
+stokes_industry_all <- stokes|>
+  group_by(year, bc_region, source)|>
+  summarize(count=sum(count, na.rm = TRUE))|>
+  mutate(industry="All industries")|>
+  group_by(year, source, industry, .add=FALSE)|>
+  mutate(share=count/sum(count, na.rm = TRUE))
 
 stokes_industry <- stokes|>
   group_by(industry)|>
   nest()|>
   mutate(data=map(data, get_share))|>
-  unnest(data)
+  unnest(data)|>
+  full_join(stokes_industry_all)
 
 by_industry <- full_join(lfs_industry, stokes_industry)
 by_region <- full_join(lfs_region, stokes_region)
