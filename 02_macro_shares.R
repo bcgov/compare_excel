@@ -23,7 +23,6 @@ stokes_industries <- mapping|> #the names of the stokes industries as a vector
 lfs_data <- read_csv(here("data","lfs_emp_by_reg_and_lmo64_long.csv"))|>
   rename(year=syear)|>
   full_join(mapping, by=c("lmo_ind_code","lmo_detailed_industry"="lmo_industry_name"))|>
-  group_by(year)|>
   mutate(bc_region = case_when(bc_region=="North Coast" ~ "North Coast and Nechako",#stokes aggregates these regions
                                bc_region=="Nechako" ~ "North Coast and Nechako",
                                TRUE ~ bc_region),
