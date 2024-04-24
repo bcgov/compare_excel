@@ -329,7 +329,7 @@ plotly::renderPlotly({
 })
 ```
 
-Regional shares by industry
+Industry shares by Region
 ===================================== 
 
 Inputs {.sidebar}
@@ -363,7 +363,7 @@ plotly::ggplotly(plt)
 ```
 
 
-Industry shares by region
+Regional shares by Industry
 =====================================  
 
 Inputs {.sidebar}

@@ -11,11 +11,6 @@ tidy_up <- function(tbbl){
     mutate(count=count*1000,
            year=as.numeric(year))
 }
-get_share <- function(tbbl){
-  tbbl|>
-    group_by(year)|>
-    mutate(share=count/sum(count, na.rm = TRUE))
-}
 #the program----------------------
 mapping <- read_csv(here("data","lmo64_agg_stokes_mapping.csv"))|>
   select(-aggregate_industry) #do not need lmo aggregate industry
@@ -24,7 +19,7 @@ stokes_industries <- mapping|> #the names of the stokes industries as a vector
   select(stokes_industry)|>
   distinct()|>
   pull()
-
+#get the data--------------------------------
 lfs_data <- read_csv(here("data","lfs_emp_by_reg_and_lmo64_long.csv"))|>
   rename(year=syear)|>
   full_join(mapping, by=c("lmo_ind_code","lmo_detailed_industry"="lmo_industry_name"))|>
@@ -43,7 +38,7 @@ lfs_region_names <- lfs_data|> #LFS has correct naming: use to correct naming in
 
 stokes_regional_files <- list.files(here("data","macro_new"), pattern = "9", full.names = TRUE)
 
-stokes <- tibble(bc_region=stokes_regional_files)|>
+stokes_data <- tibble(bc_region=stokes_regional_files)|>
   mutate(data=map(bc_region, read_excel, skip=2, sheet="LabourMarket2", na="NA", col_types=c("text",rep("numeric",25))),
          data=map(data, tidy_up),
          bc_region=unlist(qdapRegex::ex_between(stokes_regional_files, ")", ".")), #filename contains region between ) and .
@@ -56,35 +51,31 @@ stokes <- tibble(bc_region=stokes_regional_files)|>
   select(-bc_region.x)|>
   na.omit()
 
-all_data <- full_join(lfs_data, stokes)
-
+all_data <- full_join(lfs_data, stokes_data)
+#aggregate the data-----------------------------------------
 region_bc <- all_data|>
   group_by(year, industry, source)|>
-  summarize(count=sum(count, na.rm = TRUE))|>
-  mutate(bc_region="British Columbia")|>
-  group_by(year, source, bc_region, .add = FALSE)|>
-  mutate(share=count/sum(count, na.rm = TRUE))
+  summarize(count=sum(count, na.rm = TRUE))|> #BC employment by year and industry (aggregated across regions)
+  group_by(year, source, .add = FALSE)|>
+  mutate(share=count/sum(count, na.rm = TRUE), #industry shares by year
+         bc_region="British Columbia")
 
 by_region <- all_data|>
-  group_by(bc_region)|>
-  nest()|>
-  mutate(data=map(data, get_share))|>
-  unnest(data)|>
+  group_by(year, bc_region)|>
+  mutate(share=count/sum(count, na.rm = TRUE))|>
   full_join(region_bc)
 
 industry_all <- all_data|>
-  group_by(year, bc_region, source)|>
+  group_by(year, bc_region, source)|> #BC employment by year and region (aggregated across industries)
   summarize(count=sum(count, na.rm = TRUE))|>
-  mutate(industry="All industries")|>
-  group_by(year, source, industry, .add=FALSE)|>
-  mutate(share=count/sum(count, na.rm = TRUE))
+  group_by(year, source, .add=FALSE)|>
+  mutate(share=count/sum(count, na.rm = TRUE), #region shares by year
+         industry="All industries")
 
 by_industry <- all_data|>
-  group_by(industry)|>
-  nest()|>
-  mutate(data=map(data, get_share))|>
-  unnest(data)|>
+  group_by(year, industry)|>
+  mutate(share=count/sum(count, na.rm = TRUE))|>
   full_join(industry_all)
-
+#write to disk------------------------------
 write_csv(by_industry, here("out","industry_shares.csv"))
 write_csv(by_region, here("out","region_shares.csv"))
