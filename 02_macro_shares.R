@@ -55,26 +55,26 @@ all_data <- full_join(lfs_data, stokes_data)
 #aggregate the data-----------------------------------------
 region_bc <- all_data|>
   group_by(year, industry, source)|>
-  summarize(count=sum(count, na.rm = TRUE))|> #BC employment by year and industry (aggregated across regions)
-  group_by(year, source, .add = FALSE)|>
-  mutate(share=count/sum(count, na.rm = TRUE), #industry shares by year
+  summarize(count=sum(count, na.rm = TRUE))|> #annual industry employment (for British Columbia)
+  group_by(year, source, .add = FALSE)|> #remove the industry grouping
+  mutate(share=count/sum(count, na.rm = TRUE), #annual industry shares (for British Columbia)
          bc_region="British Columbia")
 
 by_region <- all_data|>
-  group_by(year, bc_region)|>
-  mutate(share=count/sum(count, na.rm = TRUE))|>
+  group_by(year, bc_region, .add=FALSE)|>
+  mutate(share=count/sum(count, na.rm = TRUE))|> #annual industry shares by region
   full_join(region_bc)
 
 industry_all <- all_data|>
-  group_by(year, bc_region, source)|> #BC employment by year and region (aggregated across industries)
-  summarize(count=sum(count, na.rm = TRUE))|>
-  group_by(year, source, .add=FALSE)|>
-  mutate(share=count/sum(count, na.rm = TRUE), #region shares by year
+  group_by(year, bc_region, source)|>
+  summarize(count=sum(count, na.rm = TRUE))|> #annual regional employment (for all industries)
+  group_by(year, source, .add=FALSE)|> #remove the regional grouping
+  mutate(share=count/sum(count, na.rm = TRUE), #annual regional shares (for all industries)
          industry="All industries")
 
 by_industry <- all_data|>
   group_by(year, industry)|>
-  mutate(share=count/sum(count, na.rm = TRUE))|>
+  mutate(share=count/sum(count, na.rm = TRUE))|> #annual regional shares by industry
   full_join(industry_all)
 #write to disk------------------------------
 write_csv(by_industry, here("out","industry_shares.csv"))
