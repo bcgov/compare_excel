@@ -2,7 +2,6 @@ library(tidyverse)
 library(here)
 library(readxl)
 #functions--------------------------
-
 tidy_up <- function(tbbl){
   colnames(tbbl)[1] <- "industry"
   tbbl|>
@@ -12,19 +11,16 @@ tidy_up <- function(tbbl){
     mutate(count=count*1000,
            year=as.numeric(year))
 }
-
 get_share <- function(tbbl){
   tbbl|>
     group_by(year)|>
     mutate(share=count/sum(count, na.rm = TRUE))
 }
-
 #the program----------------------
-
 mapping <- read_csv(here("data","lmo64_agg_stokes_mapping.csv"))|>
-  select(-aggregate_industry)
+  select(-aggregate_industry) #do not need lmo aggregate industry
 
-stokes_industries <- mapping|>
+stokes_industries <- mapping|> #the names of the stokes industries as a vector
   select(stokes_industry)|>
   distinct()|>
   pull()
@@ -40,48 +36,18 @@ lfs_data <- read_csv(here("data","lfs_emp_by_reg_and_lmo64_long.csv"))|>
   group_by(year, bc_region, industry=stokes_industry, source)|>
   summarize(count=sum(count, na.rm = TRUE))
 
-lfs_region_bc <- lfs_data|>
-  group_by(year, industry, source)|>
-  summarize(count=sum(count, na.rm = TRUE))|>
-  mutate(bc_region="British Columbia")|>
-  group_by(year, source, bc_region, .add = FALSE)|>
-  mutate(share=count/sum(count, na.rm = TRUE))
-
-lfs_region <- lfs_data|>
-  group_by(bc_region)|>
-  nest()|>
-  mutate(data=map(data, get_share))|>
-  unnest(data)|>
-  full_join(lfs_region_bc)
-
-lfs_industry_all <- lfs_data|>
-  group_by(year, bc_region, source)|>
-  summarize(count=sum(count, na.rm = TRUE))|>
-  mutate(industry="All industries")|>
-  group_by(year, source, industry, .add=FALSE)|>
-  mutate(share=count/sum(count, na.rm = TRUE))
-
-lfs_industry <- lfs_data|>
-  group_by(industry)|>
-  nest()|>
-  mutate(data=map(data, get_share))|>
-  unnest(data)|>
-  full_join(lfs_industry_all)
-
-lfs_region_names <- lfs_region|>
+lfs_region_names <- lfs_data|> #LFS has correct naming: use to correct naming in stokes data with fuzzyjoin below
+  ungroup()|>
   select(bc_region)|>
   distinct()
-
-#get regional data for macro cuts----------------------------
 
 stokes_regional_files <- list.files(here("data","macro_new"), pattern = "9", full.names = TRUE)
 
 stokes <- tibble(bc_region=stokes_regional_files)|>
   mutate(data=map(bc_region, read_excel, skip=2, sheet="LabourMarket2", na="NA", col_types=c("text",rep("numeric",25))),
          data=map(data, tidy_up),
-         bc_region=str_match(bc_region, "\\)\\s*(.*?)\\s*\\.")[,2],
-         bc_region=str_replace_all(bc_region, "&"," and ")
-  )|>
+         bc_region=unlist(qdapRegex::ex_between(stokes_regional_files, ")", ".")), #filename contains region between ) and .
+         bc_region=str_replace_all(bc_region, "&"," and "))|> # necessary for fuzzyjoin below
   unnest(data)|>
   mutate(source="stokes")|>
   fuzzyjoin::stringdist_full_join(lfs_region_names, by = "bc_region")|> #stokes has f'd up region names
@@ -90,36 +56,35 @@ stokes <- tibble(bc_region=stokes_regional_files)|>
   select(-bc_region.x)|>
   na.omit()
 
-stokes_region_bc <- stokes|>
+all_data <- full_join(lfs_data, stokes)
+
+region_bc <- all_data|>
   group_by(year, industry, source)|>
   summarize(count=sum(count, na.rm = TRUE))|>
   mutate(bc_region="British Columbia")|>
-  group_by(year, source, bc_region, .add=FALSE)|>
+  group_by(year, source, bc_region, .add = FALSE)|>
   mutate(share=count/sum(count, na.rm = TRUE))
 
-stokes_region <- stokes|>
+by_region <- all_data|>
   group_by(bc_region)|>
   nest()|>
   mutate(data=map(data, get_share))|>
   unnest(data)|>
-  full_join(stokes_region_bc)
+  full_join(region_bc)
 
-stokes_industry_all <- stokes|>
+industry_all <- all_data|>
   group_by(year, bc_region, source)|>
   summarize(count=sum(count, na.rm = TRUE))|>
   mutate(industry="All industries")|>
   group_by(year, source, industry, .add=FALSE)|>
   mutate(share=count/sum(count, na.rm = TRUE))
 
-stokes_industry <- stokes|>
+by_industry <- all_data|>
   group_by(industry)|>
   nest()|>
   mutate(data=map(data, get_share))|>
   unnest(data)|>
-  full_join(stokes_industry_all)
-
-by_industry <- full_join(lfs_industry, stokes_industry)
-by_region <- full_join(lfs_region, stokes_region)
+  full_join(industry_all)
 
 write_csv(by_industry, here("out","industry_shares.csv"))
 write_csv(by_region, here("out","region_shares.csv"))
