@@ -128,6 +128,9 @@ selectInput(
 )
 })
 
+checkboxInput("origin", "Are you Sazid? (should y axis include the origin)", value = FALSE)
+
+
 reactive_base <- reactive({
   temp <- joined|>
     filter(which_file==input$file, 
@@ -208,6 +211,11 @@ plotly::renderPlotly({
     ggplot(aes(year,value, colour=name))+
     geom_line()+
     labs(title=rev(rownames(reactive_tbbl()))[input$point$y])
+  
+  if(input$origin==TRUE){
+    plt <- plt+ 
+      expand_limits(y = 0)
+  }  
   plotly::ggplotly(plt)
 })
 ```
@@ -324,6 +332,12 @@ plotly::renderPlotly({
     labs(x=NULL,
          y=NULL,
          colour=NULL)
+  
+  if(input$origin==TRUE){
+    plt <- plt+ 
+      expand_limits(y = 0)
+  }  
+  
   plotly::ggplotly(plt)|>
     plotly::layout(legend = list(orientation = "h", x = 0.4, y = -0.2))
 })
@@ -358,6 +372,12 @@ plotly::renderPlotly({
     geom_line()+
     scale_y_continuous(labels=scales::percent)+
     facet_wrap(~bc_region, scales = "free_y")
+  
+ if(input$origin==TRUE){
+    plt <- plt+ 
+      expand_limits(y = 0)
+  }   
+  
 plotly::ggplotly(plt)    
 })
 ```
@@ -392,6 +412,12 @@ plotly::renderPlotly({
     geom_line()+
     scale_y_continuous(labels=scales::percent)+
     facet_wrap(~industry, scales = "free_y")
+  
+ if(input$origin==TRUE){
+    plt <- plt+ 
+      expand_limits(y = 0)
+  }  
+  
 plotly::ggplotly(plt)    
 })
 ```

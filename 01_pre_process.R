@@ -2,7 +2,7 @@
 cut <- "macro"
 #cut <- "industry"
 start_year <- lubridate::year(lubridate::today())
-start_of_current_month <- lubridate::ym(tsibble::yearmonth(lubridate::today()))
+two_months_ago <- lubridate::today()-months(2) #need to tweak (1 or 2 months) depending on LFS releases
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)
 #' they need to have the same sheet names (between versions)
@@ -77,7 +77,7 @@ original_tbbl <- tibble(which_file=list.files(here("data", old_folder)),
                         path=here("data", old_folder, which_file))|>
   mutate(sheet=map(path, get_sheets))|>
   unnest(sheet)|>
-  mutate(original_data=map2(which_file, sheet, read_sheet, old_folder, "original", numeric_columns=24))|>
+  mutate(original_data=map2(which_file, sheet, read_sheet, old_folder, "original", numeric_columns=25))|>
   select(-path)
 
 new_tbbl <- tibble(which_file=list.files(here("data", new_folder)),
@@ -178,7 +178,7 @@ lfs_data <- vroom::vroom(here("data", lfs_files))|>
          series="LFS Data")|>
   ungroup()|>
   select(-SYEAR,-SMTH)|>
-  filter(date<start_of_current_month)
+  filter(date<two_months_ago)
 
 if(cut=="macro"){
   lfs_data <- full_join(lfs_data, mapping, by="lmo_ind_code")|>
