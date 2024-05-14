@@ -99,7 +99,7 @@ Inputs {.sidebar data-width=400}
 -------------------------------------
 
 *  This app allows one to visualize what has changed between Stokes cuts, and how employment compares with our internal forecast.
-*  The heatmap on this page illustrates the degree of difference between the final macro cut of 2023 and the first macro cut of 2024.
+*  The heatmap on this page illustrates the degree of difference between the current and most recent cut.
 *  Dark colours indicate little difference between cuts:  yellow indicates a (relatively) large difference.
 *  You can zoom in by highlighting (click-dragging) a region of the heatmap. 
 *  You can **CLICK** on a row in the heatmap to see the underlying data.
