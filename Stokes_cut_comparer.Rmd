@@ -13,6 +13,7 @@ resource_files:
 - out/industry_shares.csv
 - out/region_shares.csv
 - github.png
+- out/stokes_regional_diff.rds
 ---
 
 ```{r, include=FALSE}
@@ -87,9 +88,11 @@ cagrs <- read_rds(here("out","cagrs.rds"))
 mapping <- read_csv(here("data","lmo64_agg_stokes_mapping.csv"))
 lfs_data <- read_csv(here("out","lfs_data.csv"))
 industry_shares <- read_csv(here("out","industry_shares.csv"))|>
-  mutate(industry=str_trunc(industry, 30, "right"))
+  mutate(industry=str_trunc(industry, 25, "right"))|>
+  filter(year>2001)
 region_shares <- read_csv(here("out","region_shares.csv"))
 files <- sort(unique(joined$which_file), decreasing = TRUE)
+stokes_regional_diff <- read_rds(here("out","stokes_regional_diff.rds"))
 ```
 
 Comparison with previous cut
@@ -371,7 +374,10 @@ plotly::renderPlotly({
     ggplot(aes(year, share, colour=source))+
     geom_line()+
     scale_y_continuous(labels=scales::percent)+
-    facet_wrap(~bc_region, scales = "free_y")
+    facet_wrap(~bc_region)+
+    labs(x=NULL,
+         y=NULL)+
+    theme(legend.position='none')
   
  if(input$origin==TRUE){
     plt <- plt+ 
@@ -407,22 +413,70 @@ Column
 plotly::renderPlotly({
   plt <- industry_shares|>
     filter(bc_region==input$region)|>
+    filter(industry!="All industries")|>
     mutate(industry=fct_reorder(industry, share, max, .desc = TRUE))|>
     ggplot(aes(year, share, colour=source))+
     geom_line()+
     scale_y_continuous(labels=scales::percent)+
-    facet_wrap(~industry, scales = "free_y")
+    facet_wrap(~industry)+
+    labs(x=NULL,
+         y=NULL)+
+    theme(legend.position='none')
   
  if(input$origin==TRUE){
     plt <- plt+ 
       expand_limits(y = 0)
   }  
   
-plotly::ggplotly(plt)    
+plotly::ggplotly(plt)
 })
 ```
 
+Regional heatmaps
+=======================================
 
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+selectInput(
+  "industry2",
+  "Select an industry",
+  unique(stokes_regional_diff$industry),
+  selected = unique(stokes_regional_diff$industry)[1]
+)
+```
+
+
+Column
+------------------------------------- 
+
+### Regional cut comparison for `r renderUI({input$industry2})`
+
+```{r, fig.retina=2}
+renderPlot({
+ stokes_regional_diff|>
+  mutate(year=as.character(year))|>
+  filter(industry==input$industry2)|>
+  ggplot(aes(year, bc_region))+
+  geom_tile(aes(fill=scaled_difference), colour="black")+
+  geom_text(aes(label=paste0(difference,
+                             "\n",
+                             "(",scales::percent(percent_difference, accuracy = .1),
+                             ")",
+                             "\n",
+                             new
+                             )),
+            size=5)+
+  colorspace::scale_fill_continuous_diverging()+
+  theme_minimal()+
+  labs(x=NULL,
+       y=NULL,
+       fill=NULL,
+       title="level differences, % differences, and new levels")+ 
+    theme(text=element_text(size=20))
+})
+```
 
 
 Mapping from LMO industries to Stokes industries

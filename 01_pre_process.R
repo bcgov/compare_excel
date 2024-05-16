@@ -2,7 +2,7 @@
 cut <- "macro"
 #cut <- "industry"
 start_year <- lubridate::year(lubridate::today())
-two_months_ago <- lubridate::today()-months(2) #need to tweak (1 or 2 months) depending on LFS releases
+two_months_ago <- lubridate::today()-months(1) #need to tweak (1 or 2 months) depending on LFS releases
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)
 #' they need to have the same sheet names (between versions)
@@ -27,13 +27,16 @@ if(cut=="macro"){
   pattern = "BritishColumbiaTables" #this is for comparing stokes to internal
   sheet = "Labour Market" #this is for comparing stokes to internal
   skip = 2
+  numeric_columns = 25
+  add_rows = 3
 }else if(cut=="industry"){
   new_folder = "industry_new"
   old_folder = "industry_old"
   pattern = "IndustryEmploymentBC"#this is for comparing stokes to internal
   sheet = "BC"#this is for comparing stokes to internal
   skip = 1
-  numeric_columns = 22
+  numeric_columns = 23
+  add_rows = 2
 }else{
   stop()
 }
@@ -49,7 +52,7 @@ read_sheet <- function(which_file, sheet, sub_directory, prepend, numeric_column
   colnames(tbbl)[1] <- "variable" #missing name of the series identifier
 #browser()
   tbbl <- tbbl|>
-    mutate(variable=paste0((row_number()+3),": ", variable))|>
+    mutate(variable=paste0((row_number()+add_rows),": ", variable))|>
     filter(!is.na(variable))|>
     pivot_longer(cols = -variable,
                  names_to = "year",
@@ -77,19 +80,20 @@ original_tbbl <- tibble(which_file=list.files(here("data", old_folder)),
                         path=here("data", old_folder, which_file))|>
   mutate(sheet=map(path, get_sheets))|>
   unnest(sheet)|>
-  mutate(original_data=map2(which_file, sheet, read_sheet, old_folder, "original", numeric_columns=25))|>
+  mutate(original_data=map2(which_file, sheet, read_sheet, old_folder, "original", numeric_columns))|>
   select(-path)
 
 new_tbbl <- tibble(which_file=list.files(here("data", new_folder)),
                    path=here("data", new_folder, which_file))|>
   mutate(sheet=map(path, get_sheets))|>
   unnest(sheet)|>
-  mutate(new_data=map2(which_file, sheet, read_sheet, new_folder, "new", numeric_columns=25))|>
+  mutate(new_data=map2(which_file, sheet, read_sheet, new_folder, "new", numeric_columns))|>
   select(-path)
 
-joined <- full_join(original_tbbl, new_tbbl)|>
+joined <- bind_cols(original_tbbl, new_tbbl)|>
   mutate(joined=map2(new_data, original_data, inner_join))|>
-  select(-new_data, -original_data)
+  select(-new_data, -original_data, -`which_file...4`, -`sheet...5`)
+colnames(joined) <- str_remove(colnames(joined),"...\\d")
 
 write_rds(joined, here("out","joined.rds"))
 
@@ -164,7 +168,8 @@ write_rds(cagrs, here("out","cagrs.rds"))
 
 # comparing to LFS data-----------------------------------
 
-naics_to_lmo_mapping <- read_csv(here("data","tidy_2024_naics_to_lmo.csv"))
+naics_to_lmo_mapping <- read_csv(here("data","tidy_2024_naics_to_lmo.csv"))|>
+  mutate(naics=paste0("0",naics))
 
 lfs_files <- list.files(here("data"), pattern = "lfsstat4digNAICS")
 

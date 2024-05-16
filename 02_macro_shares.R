@@ -11,6 +11,33 @@ tidy_up <- function(tbbl){
     mutate(count=count*1000,
            year=as.numeric(year))
 }
+get_regional_data <- function(folder_name){
+  stokes_regional_files <- list.files(here("data", folder_name), pattern = "9", full.names = TRUE)
+  tibble(bc_region=stokes_regional_files)|>
+    mutate(data=map(bc_region, read_excel, skip=2, sheet="LabourMarket2", na="NA", col_types=c("text",rep("numeric",25))),
+           data=map(data, tidy_up),
+           bc_region=unlist(qdapRegex::ex_between(stokes_regional_files, ")", ".")), #filename contains region between ) and .
+           bc_region=str_replace_all(bc_region, "&"," and "))|> # necessary for fuzzyjoin below
+    unnest(data)|>
+    mutate(source=str_split(folder_name, "_")[[1]][[2]])|>
+    fuzzyjoin::stringdist_full_join(lfs_region_names, by = "bc_region")|> #stokes has f'd up region names
+    ungroup()|>
+    rename(bc_region=bc_region.y)|>
+    select(-bc_region.x)|>
+    na.omit()
+}
+
+get_bc_data <- function(folder_name){
+  stokes_files <- list.files(here("data", folder_name), pattern = "British", full.names = TRUE)
+  tibble(bc_region=stokes_files)|>
+    mutate(data=map(bc_region, read_excel, skip=2, sheet="Labour Market", na="NA", col_types=c("text",rep("numeric",25))),
+           data=map(data, tidy_up),
+           bc_region="BritishColumbiaTables")|>
+    unnest(data)|>
+    mutate(source=str_split(folder_name, "_")[[1]][[2]])|>
+    na.omit()
+}
+
 #the program----------------------
 mapping <- read_csv(here("data","lmo64_agg_stokes_mapping.csv"))|>
   select(-aggregate_industry) #do not need lmo aggregate industry
@@ -35,20 +62,7 @@ lfs_region_names <- lfs_data|> #LFS has correct naming: use to correct naming in
   select(bc_region)|>
   distinct()
 
-stokes_regional_files <- list.files(here("data","macro_new"), pattern = "9", full.names = TRUE)
-
-stokes_data <- tibble(bc_region=stokes_regional_files)|>
-  mutate(data=map(bc_region, read_excel, skip=2, sheet="LabourMarket2", na="NA", col_types=c("text",rep("numeric",25))),
-         data=map(data, tidy_up),
-         bc_region=unlist(qdapRegex::ex_between(stokes_regional_files, ")", ".")), #filename contains region between ) and .
-         bc_region=str_replace_all(bc_region, "&"," and "))|> # necessary for fuzzyjoin below
-  unnest(data)|>
-  mutate(source="stokes")|>
-  fuzzyjoin::stringdist_full_join(lfs_region_names, by = "bc_region")|> #stokes has f'd up region names
-  ungroup()|>
-  rename(bc_region=bc_region.y)|>
-  select(-bc_region.x)|>
-  na.omit()
+stokes_data <- get_regional_data("macro_new")
 
 all_data <- full_join(lfs_data, stokes_data)
 #aggregate the data-----------------------------------------
@@ -75,6 +89,51 @@ by_industry <- all_data|>
   group_by(year, industry)|>
   mutate(share=count/sum(count, na.rm = TRUE))|> #annual regional shares by industry
   full_join(industry_all)
+
+#Sazid regional stuff------------------------
+stokes_data_old <- get_regional_data("macro_old")|>
+  pivot_wider(names_from = source, values_from = count)
+
+stokes_regional <- stokes_data|>
+  pivot_wider(names_from = source, values_from = count)|>
+  full_join(stokes_data_old)
+
+stokes_bc <- stokes_regional|>
+  group_by(industry, year)|>
+  summarize(new=sum(new),
+            old=sum(old))|>
+  mutate(bc_region="Subtotals")
+
+stokes_bc_new <- get_bc_data("macro_new")|>
+  pivot_wider(names_from = source, values_from = count)
+stokes_bc_old <- get_bc_data("macro_old")|>
+  pivot_wider(names_from = source, values_from = count)
+stokes_bc_total <- full_join(stokes_bc_new, stokes_bc_old)
+
+stokes_regional_diff <- full_join(stokes_regional, stokes_bc)|>
+  full_join(stokes_bc_total)|>
+  mutate(difference=new-old,
+         scaled_difference=log10(abs(difference)+1),
+         scaled_difference=if_else(difference>0, scaled_difference, -scaled_difference),
+         percent_difference=new/old-1,
+         bc_region=factor(bc_region,
+                          ordered = TRUE,
+                          levels=c(
+                            "BritishColumbiaTables",
+                            "Subtotals",
+                            "Northeast",
+                            "North Coast and Nechako",
+                            "Cariboo",
+                            "Kootenay",
+                            "Thompson-Okanagan",
+                            "Vancouver Island and Coast",
+                            "Lower Mainland-Southwest"
+                            )
+                          )
+         )
+
+
 #write to disk------------------------------
 write_csv(by_industry, here("out","industry_shares.csv"))
 write_csv(by_region, here("out","region_shares.csv"))
+write_rds(stokes_regional_diff, here("out","stokes_regional_diff.rds"))
