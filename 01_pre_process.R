@@ -27,7 +27,6 @@ if(cut=="macro"){
   pattern = "BritishColumbiaTables" #this is for comparing stokes to internal
   sheet = "Labour Market" #this is for comparing stokes to internal
   skip = 2
-  numeric_columns = 25
   add_rows = 3
 }else if(cut=="industry"){
   new_folder = "industry_new"
@@ -35,7 +34,6 @@ if(cut=="macro"){
   pattern = "IndustryEmploymentBC"#this is for comparing stokes to internal
   sheet = "BC"#this is for comparing stokes to internal
   skip = 1
-  numeric_columns = 23
   add_rows = 2
 }else{
   stop()
@@ -44,16 +42,25 @@ if(cut=="macro"){
 #functions----------------------
 read_sheet <- function(which_file, sheet, sub_directory, prepend, numeric_columns){
   path <- here("data", sub_directory, which_file)
+
+  num_columns <- ncol(read_excel(path=path,
+                     sheet=sheet,
+                     skip = skip,
+                     na = "NA",
+                     n_max = 10))
+
   tbbl <- read_excel(path=path,
                      sheet=sheet,
                      skip = skip,
                      na = "NA",
-                     col_types = c("text", rep("numeric", numeric_columns)))
+                     col_types = c("text", rep("numeric", num_columns-1)))
   colnames(tbbl)[1] <- "variable" #missing name of the series identifier
-#browser()
+
   tbbl <- tbbl|>
     mutate(variable=paste0((row_number()+add_rows),": ", variable))|>
-    filter(!is.na(variable))|>
+    filter(!is.na(variable),
+           !str_detect(variable, "%")
+           )|>
     pivot_longer(cols = -variable,
                  names_to = "year",
                  values_to = paste(prepend, "value", sep="_"))
@@ -80,14 +87,14 @@ original_tbbl <- tibble(which_file=list.files(here("data", old_folder)),
                         path=here("data", old_folder, which_file))|>
   mutate(sheet=map(path, get_sheets))|>
   unnest(sheet)|>
-  mutate(original_data=map2(which_file, sheet, read_sheet, old_folder, "original", numeric_columns))|>
+  mutate(original_data=map2(which_file, sheet, read_sheet, old_folder, "original"))|>
   select(-path)
 
 new_tbbl <- tibble(which_file=list.files(here("data", new_folder)),
                    path=here("data", new_folder, which_file))|>
   mutate(sheet=map(path, get_sheets))|>
   unnest(sheet)|>
-  mutate(new_data=map2(which_file, sheet, read_sheet, new_folder, "new", numeric_columns))|>
+  mutate(new_data=map2(which_file, sheet, read_sheet, new_folder, "new"))|>
   select(-path)
 
 joined <- bind_cols(original_tbbl, new_tbbl)|>
