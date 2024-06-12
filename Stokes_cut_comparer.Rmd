@@ -369,6 +369,7 @@ plotly::renderPlotly({
     filter(industry==input$industry)|>
     mutate(bc_region=fct_reorder(bc_region, share, max, .desc = TRUE))|>
     ggplot(aes(year, share, colour=source))+
+    geom_hline(yintercept = 0, colour="white", lwd=2)+
     geom_line()+
     scale_y_continuous(labels=scales::percent)+
     facet_wrap(~bc_region)+
@@ -413,6 +414,7 @@ plotly::renderPlotly({
     filter(industry!="All industries")|>
     mutate(industry=fct_reorder(industry, share, max, .desc = TRUE))|>
     ggplot(aes(year, share, colour=source))+
+    geom_hline(yintercept = 0, colour="white", lwd=2)+
     geom_line()+
     scale_y_continuous(labels=scales::percent)+
     facet_wrap(~industry)+
@@ -457,7 +459,7 @@ renderPlot({
   filter(industry==input$industry2)|>
   ggplot(aes(year, bc_region))+
   geom_tile(aes(fill=scaled_difference), colour="black")+
-  geom_text(aes(label=paste0(difference,
+  geom_text(aes(label=paste0(scales::comma(difference, accuracy = 1),
                              "\n",
                              "(",scales::percent(percent_difference, accuracy = .1),
                              ")",

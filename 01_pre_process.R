@@ -1,6 +1,6 @@
 #' you need to set the cut type:
-cut <- "macro"
-#cut <- "industry"
+#cut <- "macro"
+cut <- "industry"
 start_year <- lubridate::year(lubridate::today())
 two_months_ago <- lubridate::today()-months(1) #need to tweak (1 or 2 months) depending on LFS releases
 #' NOTE: the files that are being compared need to be quite similar:
@@ -40,7 +40,7 @@ if(cut=="macro"){
 }
 
 #functions----------------------
-read_sheet <- function(which_file, sheet, sub_directory, prepend, numeric_columns){
+read_sheet <- function(which_file, sheet, sub_directory, prepend){
   path <- here("data", sub_directory, which_file)
 
   num_columns <- ncol(read_excel(path=path,
