@@ -306,8 +306,8 @@ cagr_plot(cagrs, internal_cagr_ty, stokes_cagr_ty, rev(rownames(temp))[input$poi
 ```{r}
 reactive_tbbl2 <- reactive({
  internal_vs_stokes|>
-    mutate(date=ymd(paste(name,"06","15", sep="-")))|>
-    filter(date>start_year)|>
+    mutate(date=ymd(paste(name,"06","15", sep="-")))|> #convert annual data to monthly 
+    filter(date>start_year-months(6))|> #only the forecast period
     select(-name, -stokes_growth)|>
     pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
     full_join(lfs_data)|>

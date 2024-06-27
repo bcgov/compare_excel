@@ -2,15 +2,25 @@ library(tidyverse)
 library(here)
 library(readxl)
 #functions--------------------------
-get_sheet <- function(sheet, folder_name, numeric_columns){
+get_sheet <- function(sheet, folder_name){
   file <- list.files(here("data",folder_name), pattern = "IndustryEmploymentBC")
+
+  num_columns <- ncol(read_excel(here("data",
+                          folder_name,
+                          file),
+                     sheet=sheet,
+                     skip=1,
+                     na="NA",
+                     n_max=10))
+
+
   tbbl <- read_excel(here("data",
                           folder_name,
                           file),
                      sheet=sheet,
                      skip=1,
                      na="NA",
-                     col_types = c("text", rep("numeric", numeric_columns)))|>
+                     col_types = c("text", rep("numeric", num_columns-1)))|>
     janitor::remove_empty("rows")
   colnames(tbbl)[1] <- "lmo_industry_name"
   tbbl|>
@@ -19,12 +29,12 @@ get_sheet <- function(sheet, folder_name, numeric_columns){
     mutate(year=as.numeric(year),
            count=count*1000)
 }
-get_regional_data <- function(folder_name, numeric_columns){
+get_regional_data <- function(folder_name){
   file <- list.files(here("data",folder_name), pattern = "IndustryEmploymentBC")
   tibble(sheet=excel_sheets(here("data",
                                  folder_name,
                                  file)))|>
-    mutate(data=map(sheet, get_sheet, folder_name, numeric_columns))|>
+    mutate(data=map(sheet, get_sheet, folder_name))|>
     unnest(data)|>
     mutate(source=str_split(folder_name, "_")[[1]][[2]])|>
     filter(year>=year(today()))|>
@@ -55,7 +65,7 @@ file <- list.files(here("data","industry_new"), pattern = "IndustryEmploymentBC"
 stokes_data <- tibble(sheet=excel_sheets(here("data",
                                               "industry_new",
                                               file))[-1])|>
-  mutate(data=map(sheet, get_sheet, "industry_new", numeric_columns))|>
+  mutate(data=map(sheet, get_sheet, "industry_new"))|>
   arrange(sheet)|>
   mutate(bc_region=sort(unique(lfs_data$bc_region)))|>
   select(-sheet)|>
@@ -96,8 +106,8 @@ by_industry <- all_data|>
 
 # regional stuff for sazid
 
-stokes_data_new <- get_regional_data("industry_new", numeric_columns)
-stokes_data_old <- get_regional_data("industry_old", numeric_columns=22)
+stokes_data_new <- get_regional_data("industry_new")
+stokes_data_old <- get_regional_data("industry_old")
 
 stokes_all <- full_join(stokes_data_new, stokes_data_old)|>
   rename(industry=lmo_industry_name,
