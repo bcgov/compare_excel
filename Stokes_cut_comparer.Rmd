@@ -325,6 +325,7 @@ reactive_lfs_last_year <- reactive({
 plotly::renderPlotly({
   req(input$point2) 
   plt <- ggplot(reactive_tbbl2(), aes(date, value, colour=series))+
+    geom_vline(xintercept = as.numeric(floor_date(today(), unit="year")-months(1)), colour="white", lwd=1)+
     geom_line(alpha=.5)+
     geom_line(data=reactive_lfs_last_year())+
     scale_y_continuous(labels = scales::comma)+
@@ -337,7 +338,6 @@ plotly::renderPlotly({
     plt <- plt+ 
       expand_limits(y = 0)
   }  
-  
   plotly::ggplotly(plt)|>
     plotly::layout(legend = list(orientation = "h", x = 0.4, y = -0.2))
 })
