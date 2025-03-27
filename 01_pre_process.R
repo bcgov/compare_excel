@@ -214,7 +214,7 @@ lfs_data_totals <- lfs_data|>
 
 lfs_data <- full_join(lfs_data, lfs_data_totals)
 
-write_csv(lfs_data, here("out","lfs_data.csv"))
+write_rds(lfs_data, here("out","lfs_data.rds"))
 
 if(cut=="macro") source("02_macro_shares.R")
 if(cut=="industry") source("03_industry_shares.R")

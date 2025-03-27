@@ -53,7 +53,7 @@ stokes_industries <- mapping|> #the names of the stokes industries as a vector
 #get the data--------------------------------
 
 file_path <-here("data", "Employment for 64 LMO Industries 2000-2024.xlsx")
-sheet_names <- excel_sheets(file_path)[-c(1,5,6)]
+sheet_names <- excel_sheets(file_path)[-c(1,5,6)] #could fail
 
 lfs_data <- tibble(
   bc_region = sheet_names,
@@ -77,12 +77,6 @@ stokes_data <- get_regional_data("macro_new")
 
 all_data <- full_join(lfs_data, stokes_data)
 #aggregate the data-----------------------------------------
-# region_bc <- all_data|>
-#   group_by(year, industry, source)|>
-#   summarize(count=sum(count, na.rm = TRUE))|> #annual industry employment (for British Columbia)
-#   group_by(year, source, .add = FALSE)|> #remove the industry grouping
-#   mutate(share=count/sum(count, na.rm = TRUE), #annual industry shares (for British Columbia)
-#          bc_region="British Columbia")
 
 by_region <- all_data|>
   group_by(year, bc_region, source)|>
@@ -144,6 +138,6 @@ stokes_regional_diff <- full_join(stokes_regional, stokes_bc)|>
 
 
 #write to disk------------------------------
-write_csv(by_industry, here("out","industry_shares.csv"))
-write_csv(by_region, here("out","region_shares.csv"))
+write_rds(by_industry, here("out","industry_shares.rds"))
+write_rds(by_region, here("out","region_shares.rds"))
 write_rds(stokes_regional_diff, here("out","stokes_regional_diff.rds"))

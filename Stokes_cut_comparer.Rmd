@@ -5,14 +5,13 @@ output:
     orientation: columns
 runtime: shiny
 resource_files:
-- out/joined.rds
+- data/industry_mapping_2025_with_stokes_agg.xlsx
 - out/cagrs.rds
+- out/industry_shares.rds
 - out/internal_vs_stokes.rds
-- data/lmo64_agg_stokes_mapping.csv
-- out/lfs_data.csv
-- out/industry_shares.csv
-- out/region_shares.csv
-- github.png
+- out/joined.rds
+- out/lfs_data.rds
+- out/region_shares.rds
 - out/stokes_regional_diff.rds
 ---
 
@@ -85,14 +84,17 @@ cagr_plot <- function(tbbl, xvar, yvar, highlight_industry){
 joined <- read_rds(here("out","joined.rds"))
 internal_vs_stokes <- read_rds(here("out","internal_vs_stokes.rds"))
 cagrs <- read_rds(here("out","cagrs.rds"))
-mapping <- read_csv(here("data","lmo64_agg_stokes_mapping.csv"))
-lfs_data <- read_csv(here("out","lfs_data.csv"))
-industry_shares <- read_csv(here("out","industry_shares.csv"))|>
+mapping <- read_excel(here("data","industry_mapping_2025_with_stokes_agg.xlsx"))
+lfs_data <- read_rds(here("out","lfs_data.rds"))
+industry_shares <- read_rds(here("out","industry_shares.rds"))|>
   mutate(industry=str_trunc(industry, 25, "right"))|>
   filter(year>2001)
-region_shares <- read_csv(here("out","region_shares.csv"))
+region_shares <- read_rds(here("out","region_shares.rds"))
 files <- sort(unique(joined$which_file), decreasing = TRUE)
 stokes_regional_diff <- read_rds(here("out","stokes_regional_diff.rds"))
+detailed_to_stokes <- mapping|>
+  select(lmo_detailed_industry, stokes_industry)|>
+  distinct()
 ```
 
 Comparison with previous cut
@@ -205,14 +207,24 @@ plotly::renderPlotly({
   req(input$point)
   plt <- reactive_base()|>
     filter(variable==rev(rownames(reactive_tbbl()))[input$point$y])|>
-    ungroup()|>
-    select(year, new_value, original_value)|>
-    pivot_longer(cols = -year)|>
+    mutate(new_10_cagr=((tail(new_value, n=1)-head(new_value, n=1)+abs(head(new_value, n=1)))/(abs(head(new_value, n=1))))^(.1)-1,
+           original_10_cagr=((tail(original_value, n=1)-head(original_value, n=1)+abs(head(original_value, n=1)))/(abs(head(original_value, n=1))))^(.1)-1,
+           new_10_cagr=scales::percent(new_10_cagr, accuracy=.1),
+           original_10_cagr=scales::percent(original_10_cagr, accuracy=.1)
+          )|>
+    pivot_longer(cols = c(new_value, original_value))|>
     mutate(year=as.numeric(year))|>
-    ggplot(aes(year,value, colour=name))+
+    ggplot(aes(year,
+               value,
+               colour=name,
+               text=paste0(
+                 "Original 10 year CAGR: ",
+                 original_10_cagr,
+                 "\n New 10 year CAGR: ",
+                 new_10_cagr)))+
     geom_line()+
     labs(title=rev(rownames(reactive_tbbl()))[input$point$y])
-  
+ 
   if(input$origin==TRUE){
     plt <- plt+ 
       expand_limits(y = 1)
@@ -369,10 +381,10 @@ plotly::renderPlotly({
     filter(industry==input$industry)|>
     mutate(bc_region=fct_reorder(bc_region, share, max, .desc = TRUE))|>
     ggplot(aes(year, share, colour=source))+
-    geom_hline(yintercept = 0, colour="white", lwd=2)+
+#    geom_hline(yintercept = 0, colour="white", lwd=2)+
     geom_line()+
     scale_y_continuous(labels=scales::percent)+
-    facet_wrap(~bc_region)+
+    facet_wrap(~bc_region, scales="free")+
     labs(x=NULL,
          y=NULL)+
     theme(legend.position='none')
@@ -414,18 +426,18 @@ plotly::renderPlotly({
     filter(industry!="All industries")|>
     mutate(industry=fct_reorder(industry, share, max, .desc = TRUE))|>
     ggplot(aes(year, share, colour=source))+
-    geom_hline(yintercept = 0, colour="white", lwd=2)+
+ #   geom_hline(yintercept = 0, colour="white", lwd=2)+
     geom_line()+
     scale_y_continuous(labels=scales::percent)+
-    facet_wrap(~industry)+
+    facet_wrap(~industry, scales="free")+
     labs(x=NULL,
          y=NULL)+
     theme(legend.position='none')
   
- if(input$origin==TRUE){
+if(input$origin==TRUE){
     plt <- plt+ 
       expand_limits(y = 0)
-  }  
+}  
   
 plotly::ggplotly(plt)
 })
@@ -482,7 +494,7 @@ Mapping from LMO industries to Stokes industries
 ===================================== 
 
 ```{r}
-my_dt(mapping)
+my_dt(detailed_to_stokes)
 ```
 
 
