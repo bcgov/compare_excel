@@ -1,7 +1,7 @@
 #' you need to set the cut type:
-#cut <- "macro"
-cut <- "industry"
-start_year <- lubridate::year(lubridate::today())
+cut <- "macro"
+#cut <- "industry"
+start_year <- lubridate::year(lubridate::today())-1
 two_months_ago <- lubridate::today()-months(1) #need to tweak (1 or 2 months) depending on LFS releases
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)
@@ -97,27 +97,30 @@ new_tbbl <- tibble(which_file=list.files(here("data", new_folder)),
   mutate(new_data=map2(which_file, sheet, read_sheet, new_folder, "new"))|>
   select(-path)
 
-joined <- bind_cols(original_tbbl, new_tbbl)|>
+joined <- full_join(original_tbbl, new_tbbl)|>
   mutate(joined=map2(new_data, original_data, inner_join))|>
-  select(-new_data, -original_data, -`which_file...4`, -`sheet...5`)
-colnames(joined) <- str_remove(colnames(joined),"...\\d")
+  select(-new_data, -original_data)
 
 write_rds(joined, here("out","joined.rds"))
 
 ############ internal_vs_stokes------------------------
 
-mapping <- read_csv(here("data", "lmo64_agg_stokes_mapping.csv"))
+mapping <- read_excel(here("data", "industry_mapping_2025_with_stokes_agg.xlsx"))
+
+detailed_to_stokes <- mapping|>
+  select(lmo_detailed_industry, stokes_industry)|>
+  distinct()
 
 internal <- read_excel(here("data",
-                            "LMO 2024 edition LMIO industry employment forecast FINAL.xlsx"),
-                       skip=2)|>
-  select(-contains("CAGR"),-Note)|>
+                            "Preliminary Industry Forecast for LMO 2025 Edition.xlsx"),
+                       skip=0)|>
+  select(-contains("CAGR"))|>
   pivot_longer(cols=-industry, values_to = "internal")|>
-  separate(industry, into=c("lmo_ind_code", "industry"), sep=": ")|>
-  select(-lmo_ind_code)
+  separate(industry, into=c("code", "industry"), sep=": ")|>
+  select(-code)
 
 if(cut=="macro"){
-  internal <- full_join(internal, mapping, by=c("industry"="lmo_industry_name"))|>
+  internal <- inner_join(internal, detailed_to_stokes, by=c("industry"="lmo_detailed_industry"))|>
     group_by(name, industry=stokes_industry)|>
     summarize(internal=sum(internal))
 }
@@ -130,7 +133,7 @@ stokes_cut <- read_excel(here("data",
 
 colnames(stokes_cut)[1] <- "industry"
 
-internal_vs_stokes <- stokes_cut|>
+internal_vs_stokes_wrong <- stokes_cut|>
   pivot_longer(cols=-industry, values_to = "stokes_cut")|>
   filter(!industry %in% c("Total", "% Change"),
          !is.na(industry))|>
@@ -138,10 +141,15 @@ internal_vs_stokes <- stokes_cut|>
   mutate(stokes_cut=1000*stokes_cut,
          stokes_growth=stokes_cut/lag(stokes_cut)-1)|>
   nest()|>
-  fuzzyjoin::stringdist_join(internal|> #stokes names differ for industry cut... manually check fuzzy join
+  fuzzyjoin::stringdist_join(internal|>
                                ungroup()|>
                                select(industry)|>
-                               distinct())|>
+                               distinct())
+
+#manually check fuzzy join
+internal_vs_stokes_wrong[internal_vs_stokes_wrong$industry.x!=internal_vs_stokes_wrong$industry.y, ]
+
+internal_vs_stokes <-internal_vs_stokes_wrong|>
   rename(industry=industry.y)|>
   ungroup()|>
   select(-industry.x)|>
@@ -175,16 +183,14 @@ write_rds(cagrs, here("out","cagrs.rds"))
 
 # comparing to LFS data-----------------------------------
 
-naics_to_lmo_mapping <- read_csv(here("data","tidy_2024_naics_to_lmo.csv"))|>
-  mutate(naics=paste0("0",naics))
 
 lfs_files <- list.files(here("data"), pattern = "lfsstat4digNAICS")
 
 lfs_data <- vroom::vroom(here("data", lfs_files))|>
   na.omit()|>
   filter(LF_STAT=="Employed")|>
-  inner_join(naics_to_lmo_mapping, by=c("NAICS_5"="naics"))|>
-  group_by(lmo_ind_code, lmo_detailed_industry, SYEAR, SMTH)|>
+  inner_join(mapping, by=c("NAICS_5"="naics_5"))|>
+  group_by(lmo_detailed_industry, SYEAR, SMTH)|>
   summarise(value=sum(`_COUNT_`, na.rm=TRUE))|>
   mutate(date=ym(paste(SYEAR, SMTH, sep="/")),
          series="LFS Data")|>
@@ -193,7 +199,7 @@ lfs_data <- vroom::vroom(here("data", lfs_files))|>
   filter(date<two_months_ago)
 
 if(cut=="macro"){
-  lfs_data <- full_join(lfs_data, mapping, by="lmo_ind_code")|>
+  lfs_data <- inner_join(lfs_data, detailed_to_stokes)|>
     group_by(date, industry=stokes_industry, series)|>
     summarize(value=sum(value))
 }else{
