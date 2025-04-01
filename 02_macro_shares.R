@@ -76,23 +76,34 @@ lfs_region_names <- lfs_data|> #LFS has correct naming: use to correct naming in
 stokes_data <- get_regional_data("macro_new")
 
 all_data <- full_join(lfs_data, stokes_data)
-#aggregate the data-----------------------------------------
+
+#aggregate
 
 by_region <- all_data|>
   group_by(year, bc_region, source)|>
   mutate(share=count/sum(count, na.rm = TRUE))
 
-industry_all <- all_data|>
-  group_by(year, bc_region, source)|>
-  summarize(count=sum(count, na.rm = TRUE))|> #annual regional employment (for all industries)
-  group_by(year, source, .add=FALSE)|> #remove the regional grouping
-  mutate(share=count/sum(count, na.rm = TRUE), #annual regional shares (for all industries)
-         industry="All industries")
+all_regions <- all_data|>
+  group_by(year, industry, source)|>
+  summarize(count=sum(count))|>
+  group_by(year, source)|>
+  mutate(share=count/sum(count, na.rm = TRUE),
+         bc_region="British Columbia")
+
+by_region <- bind_rows(all_regions, by_region)
 
 by_industry <- all_data|>
-  group_by(year, industry)|>
-  mutate(share=count/sum(count, na.rm = TRUE))|> #annual regional shares by industry
-  full_join(industry_all)
+  group_by(year, industry, source)|>
+  mutate(share=count/sum(count, na.rm = TRUE)) #annual regional shares by industry
+
+all_industries <- all_data|>
+  group_by(year, bc_region, source)|>
+  summarize(count=sum(count))|>
+  group_by(year, source)|>
+  mutate(share=count/sum(count, na.rm = TRUE),
+         industry="All industries")
+
+by_industry <- bind_rows(by_industry, all_industries)
 
 #Sazid regional stuff------------------------
 stokes_data_old <- get_regional_data("macro_old")|>

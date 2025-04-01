@@ -1,8 +1,7 @@
 #' you need to set the cut type:
 cut <- "macro"
 #cut <- "industry"
-start_year <- lubridate::year(lubridate::today())-1
-two_months_ago <- lubridate::today()-months(1) #need to tweak (1 or 2 months) depending on LFS releases
+
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)
 #' they need to have the same sheet names (between versions)
@@ -71,9 +70,9 @@ get_sheets <- function(path){
 }
 
 get_cagrs <- function(tbbl, column){
-  val_now <- tbbl[[column]][tbbl$name==start_year]
-  val_fyfn <- tbbl[[column]][tbbl$name==start_year+5]
-  val_tyfn <- tbbl[[column]][tbbl$name==start_year+10]
+  val_now <- tbbl[[column]][tbbl$name==(max(tbbl$name)-10)]
+  val_fyfn <- tbbl[[column]][tbbl$name==(max(tbbl$name)-5)]
+  val_tyfn <- tbbl[[column]][tbbl$name==max(tbbl$name)]
   cagr_ffy <- ((val_fyfn/val_now)^.2-1)
   cagr_sfy <- ((val_tyfn/val_fyfn)^.2-1)
   cagr_ty <- ((val_tyfn/val_now)^.1-1)
@@ -163,13 +162,14 @@ internal_vs_stokes_totals <- internal_vs_stokes|>
             stokes_growth=mean(stokes_growth))|>
   mutate(industry="Total")
 
-internal_vs_stokes <- full_join(internal_vs_stokes, internal_vs_stokes_totals)
+internal_vs_stokes <- bind_rows(internal_vs_stokes, internal_vs_stokes_totals)
 
 write_rds(internal_vs_stokes, here("out","internal_vs_stokes.rds"))
 
 # CAGR stuff----------------------------------------
 
 cagrs <- internal_vs_stokes|>
+  mutate(name=as.numeric(name))|>
   group_by(industry)|>
   nest()|>
   mutate(internal=map(data, get_cagrs, "internal"),
@@ -183,20 +183,24 @@ write_rds(cagrs, here("out","cagrs.rds"))
 
 # comparing to LFS data-----------------------------------
 
-
 lfs_files <- list.files(here("data"), pattern = "lfsstat4digNAICS")
 
 lfs_data <- vroom::vroom(here("data", lfs_files))|>
   na.omit()|>
   filter(LF_STAT=="Employed")|>
+  #calculate the monthly totals to filter out 0s at end of LFS data
+  group_by(SYEAR,SMTH)|>
+  mutate(total=sum(`_COUNT_`))|>
+  filter(total>0)|>
+  select(-total)|>
+  #done
   inner_join(mapping, by=c("NAICS_5"="naics_5"))|>
   group_by(lmo_detailed_industry, SYEAR, SMTH)|>
   summarise(value=sum(`_COUNT_`, na.rm=TRUE))|>
   mutate(date=ym(paste(SYEAR, SMTH, sep="/")),
          series="LFS Data")|>
   ungroup()|>
-  select(-SYEAR,-SMTH)|>
-  filter(date<two_months_ago)
+  select(-SYEAR,-SMTH)
 
 if(cut=="macro"){
   lfs_data <- inner_join(lfs_data, detailed_to_stokes)|>
@@ -212,7 +216,7 @@ lfs_data_totals <- lfs_data|>
   summarize(value=sum(value))|>
   mutate(industry="Total")
 
-lfs_data <- full_join(lfs_data, lfs_data_totals)
+lfs_data <- bind_rows(lfs_data, lfs_data_totals)
 
 write_rds(lfs_data, here("out","lfs_data.rds"))
 

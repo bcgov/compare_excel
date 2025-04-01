@@ -17,7 +17,6 @@ resource_files:
 
 ```{r, include=FALSE}
 library(tidyverse)
-start_year <- today()
 library(here)
 library(readxl)
 library(janitor)
@@ -251,7 +250,7 @@ DT::renderDT({
 Comparison with internal employment forecast
 =====================================  
 
-Column
+Column {data-width=325}
 -------------------------------------
     
 ### Degree of difference between internal and stokes:  **CLICK** on row to choose industry
@@ -267,9 +266,10 @@ function(el, x) {
 }"
 
 temp <- internal_vs_stokes|>
-  mutate(percent_change=round(((stokes_cut-internal)/abs(internal))*100))|>
+  mutate(percent_change=round(((stokes_cut-internal)/abs(internal))*100),
+         name=as.numeric(name))|>
   select(industry, name, percent_change)|>
-  filter(name>2023,
+  filter(name>=(max(name)-10),
          industry!="Total")|>
   pivot_wider(id_cols = industry, names_from = "name", values_from = "percent_change")|>
   column_to_rownames("industry")
@@ -278,84 +278,84 @@ temp <- internal_vs_stokes|>
   onRender(js2)
 ```
  
-Column
+Column{.tabset}
 ------------------------------------- 
  
-### First five year CAGRs 
-    
-```{r}
-plotly::renderPlotly({
-req(input$point2)  
-cagr_plot(cagrs, internal_cagr_ffy, stokes_cagr_ffy, rev(rownames(temp))[input$point2$y])
-})  
-``` 
-
-
-### Second five year CAGRs
-    
-```{r}
-plotly::renderPlotly({
-req(input$point2)    
-cagr_plot(cagrs, internal_cagr_sfy, stokes_cagr_sfy, rev(rownames(temp))[input$point2$y])
-})  
-```
-
-Column
-------------------------------------- 
-
-### Ten year CAGRs
-
-```{r}
-plotly::renderPlotly({
-req(input$point2)    
-cagr_plot(cagrs, internal_cagr_ty, stokes_cagr_ty, rev(rownames(temp))[input$point2$y])
-})  
-```
-
 ### `r renderUI({rev(rownames(temp))[input$point2$y]})` relative to LFS Data
 
 
 ```{r}
 reactive_tbbl2 <- reactive({
  internal_vs_stokes|>
-    mutate(date=ymd(paste(name,"06","15", sep="-")))|> #convert annual data to monthly 
-    filter(date>start_year-months(6))|> #only the forecast period
-    select(-name, -stokes_growth)|>
+    mutate(name=as.numeric(name))|>
+    filter(name>=(max(name)-10))|> #only the forecast period
+    select(-stokes_growth)|>
     pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
-    full_join(lfs_data)|>
-    filter(industry==rev(rownames(temp))[input$point2$y])
+    filter(industry==rev(rownames(temp))[input$point2$y])|>
+    mutate(date=ymd(paste(name, "06","01", sep="/")))|>
+    select(-name)
 })
 
 reactive_lfs_last_year <- reactive({
   lfs_data|>
-    filter(industry==rev(rownames(temp))[input$point2$y])|>
     group_by(industry)|>
     mutate(value=zoo::rollmean(value, 12, align = "right", fill=NA),
-           series="12 month rolling mean of LFS")
+           series="12 month rolling mean")|>
+    bind_rows(lfs_data)|>
+    filter(industry==rev(rownames(temp))[input$point2$y])
 })
 
 plotly::renderPlotly({
-  req(input$point2) 
+  req(input$point2)
   plt <- ggplot(reactive_tbbl2(), aes(date, value, colour=series))+
-    geom_vline(xintercept = as.numeric(floor_date(today(), unit="year")-months(1)), colour="white", lwd=1)+
     geom_line(alpha=.5)+
-    geom_line(data=reactive_lfs_last_year())+
+    geom_line(data=reactive_lfs_last_year(), alpha=.5)+
     scale_y_continuous(labels = scales::comma)+
     scale_colour_brewer(palette = "Dark2")+
     labs(x=NULL,
          y=NULL,
          colour=NULL)
-  
+
   if(input$origin==TRUE){
-    plt <- plt+ 
+    plt <- plt+
       expand_limits(y = 0)
-  }  
-  plotly::ggplotly(plt)|>
-    plotly::layout(legend = list(orientation = "h", x = 0.4, y = -0.2))
+  }
+  plotly::ggplotly(plt)
 })
 ```
 
-Industry shares by Region
+### First five year CAGRs 
+
+```{r}
+plotly::renderPlotly({
+  req(input$point2)  
+  cagr_plot(cagrs, internal_cagr_ffy, stokes_cagr_ffy, rev(rownames(temp))[input$point2$y])
+})  
+``` 
+
+
+### Second five year CAGRs
+
+```{r}
+plotly::renderPlotly({
+  req(input$point2)    
+  cagr_plot(cagrs, internal_cagr_sfy, stokes_cagr_sfy, rev(rownames(temp))[input$point2$y])
+})  
+```
+
+### Ten year CAGRs
+  
+```{r}
+plotly::renderPlotly({
+  req(input$point2)    
+  cagr_plot(cagrs, internal_cagr_ty, stokes_cagr_ty, rev(rownames(temp))[input$point2$y])
+})  
+```
+
+
+
+
+Industry by Region
 ===================================== 
 
 Inputs {.sidebar}
@@ -368,6 +368,14 @@ selectInput(
   unique(region_shares$industry),
   selected = unique(region_shares$industry)[1]
 )
+
+selectInput(
+  "what",
+  "Do you want to plot counts or shares?",
+  c("count","share"),
+  "shares"
+)
+
 ```
 
 Column 
@@ -379,12 +387,9 @@ Column
 plotly::renderPlotly({
   plt <- region_shares|>
     filter(industry==input$industry)|>
-    mutate(bc_region=fct_reorder(bc_region, share, max, .desc = TRUE))|>
-    ggplot(aes(year, share, colour=source))+
-#    geom_hline(yintercept = 0, colour="white", lwd=2)+
+    ggplot(aes(year, get(input$what), colour=source))+
     geom_line()+
-    scale_y_continuous(labels=scales::percent)+
-    facet_wrap(~bc_region, scales="free")+
+    facet_wrap(~fct_reorder(bc_region, get(input$what), max, .desc=TRUE), scales="free")+
     labs(x=NULL,
          y=NULL)+
     theme(legend.position='none')
@@ -393,13 +398,19 @@ plotly::renderPlotly({
     plt <- plt+ 
       expand_limits(y = 0)
   }   
-  
+  if(input$what=="share"){
+    plt <- plt+
+      scale_y_continuous(labels=scales::percent)
+  }else{
+    plt <- plt+
+      scale_y_continuous(labels=scales::comma)
+  }
 plotly::ggplotly(plt)    
 })
 ```
 
 
-Regional shares by Industry
+Region by Industry
 =====================================  
 
 Inputs {.sidebar}
@@ -412,6 +423,14 @@ selectInput(
   unique(industry_shares$bc_region),
   selected = unique(industry_shares$bc_region)[1]
 )
+
+selectInput(
+  "what2",
+  "Do you want to plot counts or shares?",
+  c("count","share"),
+  "shares"
+)
+
 ```
 
 Column
@@ -423,13 +442,9 @@ Column
 plotly::renderPlotly({
   plt <- industry_shares|>
     filter(bc_region==input$region)|>
-    filter(industry!="All industries")|>
-    mutate(industry=fct_reorder(industry, share, max, .desc = TRUE))|>
-    ggplot(aes(year, share, colour=source))+
- #   geom_hline(yintercept = 0, colour="white", lwd=2)+
+    ggplot(aes(year, get(input$what2), colour=source))+
     geom_line()+
-    scale_y_continuous(labels=scales::percent)+
-    facet_wrap(~industry, scales="free")+
+    facet_wrap(~fct_reorder(industry, get(input$what2), max, .desc=TRUE), scales="free")+
     labs(x=NULL,
          y=NULL)+
     theme(legend.position='none')
@@ -438,7 +453,15 @@ if(input$origin==TRUE){
     plt <- plt+ 
       expand_limits(y = 0)
 }  
-  
+
+if(input$what2=="share"){
+  plt <- plt+
+    scale_y_continuous(labels=scales::percent)
+}else{
+  plt <- plt+
+    scale_y_continuous(labels=scales::comma)
+}  
+
 plotly::ggplotly(plt)
 })
 ```
@@ -490,7 +513,7 @@ renderPlot({
 ```
 
 
-Mapping from LMO industries to Stokes industries
+LMO Stokes Mapping
 ===================================== 
 
 ```{r}
