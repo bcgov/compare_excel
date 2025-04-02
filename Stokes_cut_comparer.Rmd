@@ -26,15 +26,6 @@ conflicts_prefer(dplyr::filter)
 options(scipen = 999)
 min_abs_original <- 10
 #functions-----------------------
-share_plot <- function(tbbl, facet_var){
-  ggplot(tbbl, aes(year, share, colour=source))+
-    geom_line()+
-    scale_y_continuous(labels = scales::percent)+
-    facet_wrap(~fct_reorder(get(facet_var), share, .desc = TRUE), scales = "free")+
-    labs(x=NULL,y=NULL)+
-  theme(text = element_text(size = 14), legend.position = "bottom")
-}
-
 my_dt <- function(tbbl) {
   DT::datatable(tbbl,
                 extensions = "Buttons",
@@ -387,7 +378,23 @@ Column
 plotly::renderPlotly({
   plt <- region_shares|>
     filter(industry==input$industry)|>
-    ggplot(aes(year, get(input$what), colour=source))+
+    ggplot(aes(year, 
+               get(input$what), 
+               colour=source,
+               group=source,
+               text=paste0("year: ",
+                           year,
+                           "\n series: ",
+                           source,
+                           "\n value: ",
+                           if(input$what=="count"){
+                             scales::comma(get(input$what))
+                           }else{
+                             scales::percent(get(input$what), accuracy = .1)
+                           }
+                           )
+               )
+           )+
     geom_line()+
     facet_wrap(~fct_reorder(bc_region, get(input$what), max, .desc=TRUE), scales="free")+
     labs(x=NULL,
@@ -405,7 +412,7 @@ plotly::renderPlotly({
     plt <- plt+
       scale_y_continuous(labels=scales::comma)
   }
-plotly::ggplotly(plt)    
+plotly::ggplotly(plt, tooltip = "text")    
 })
 ```
 
@@ -442,7 +449,23 @@ Column
 plotly::renderPlotly({
   plt <- industry_shares|>
     filter(bc_region==input$region)|>
-    ggplot(aes(year, get(input$what2), colour=source))+
+    ggplot(aes(year, 
+               get(input$what2), 
+               colour=source,
+               group=source,
+               text=paste0("year: ",
+                           year,
+                           "\n series: ",
+                           source,
+                           "\n value: ",
+                           if(input$what2=="count"){
+                             scales::comma(get(input$what2))
+                           }else{
+                             scales::percent(get(input$what2), accuracy = .1)
+                           }
+                           )
+               )
+           )+
     geom_line()+
     facet_wrap(~fct_reorder(industry, get(input$what2), max, .desc=TRUE), scales="free")+
     labs(x=NULL,
@@ -462,7 +485,7 @@ if(input$what2=="share"){
     scale_y_continuous(labels=scales::comma)
 }  
 
-plotly::ggplotly(plt)
+plotly::ggplotly(plt, tooltip = "text")
 })
 ```
 
