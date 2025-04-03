@@ -75,7 +75,7 @@ lfs_region_names <- lfs_data|> #LFS has correct naming: use to correct naming in
 
 stokes_data <- get_regional_data("macro_new")
 
-all_data <- full_join(lfs_data, stokes_data)
+all_data <- bind_rows(lfs_data, stokes_data)
 
 #aggregate
 
@@ -125,7 +125,7 @@ stokes_bc_old <- get_bc_data("macro_old")|>
   pivot_wider(names_from = source, values_from = count)
 stokes_bc_total <- full_join(stokes_bc_new, stokes_bc_old)
 
-stokes_regional_diff <- full_join(stokes_regional, stokes_bc)|>
+stokes_regional_diff <- bind_rows(stokes_regional, stokes_bc)|>
   bind_rows(stokes_bc_total)|>
   mutate(difference=new-old,
          scaled_difference=log10(abs(difference)+1),

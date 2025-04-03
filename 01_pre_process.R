@@ -1,13 +1,13 @@
 #' you need to set the cut type:
-cut <- "macro"
-#cut <- "industry"
+#cut <- "macro"
+cut <- "industry"
 
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)
 #' they need to have the same sheet names (between versions)
 #' they need to have the same series names aka row identifiers (between versions)
 #' the only thing that should differ is the numeric data.
-#' there is a fuzzyjoin around line 130... this should be checked manually.
+#' there is a fuzzyjoin around line 144... this should be checked manually.
 
 #libraries-----------------------
 library(tidyverse)
@@ -40,20 +40,15 @@ if(cut=="macro"){
 
 #functions----------------------
 read_sheet <- function(which_file, sheet, sub_directory, prepend){
-  path <- here("data", sub_directory, which_file)
-
-  num_columns <- ncol(read_excel(path=path,
+  tbbl <- read_excel(path=here("data", sub_directory, which_file),
                      sheet=sheet,
                      skip = skip,
                      na = "NA",
-                     n_max = 10))
+                     col_types= "text")
 
-  tbbl <- read_excel(path=path,
-                     sheet=sheet,
-                     skip = skip,
-                     na = "NA",
-                     col_types = c("text", rep("numeric", num_columns-1)))
   colnames(tbbl)[1] <- "variable" #missing name of the series identifier
+
+  tbbl[-1] <- lapply(tbbl[-1], as.numeric) #convert 2nd--last column to numeric
 
   tbbl <- tbbl|>
     mutate(variable=paste0((row_number()+add_rows),": ", variable))|>
@@ -79,7 +74,6 @@ get_cagrs <- function(tbbl, column){
   tibble(cagr_ffy=cagr_ffy, cagr_sfy=cagr_sfy,cagr_ty=cagr_ty)
 }
 
-
 # the program-------------------------------------
 
 original_tbbl <- tibble(which_file=list.files(here("data", old_folder)),
@@ -95,6 +89,13 @@ new_tbbl <- tibble(which_file=list.files(here("data", new_folder)),
   unnest(sheet)|>
   mutate(new_data=map2(which_file, sheet, read_sheet, new_folder, "new"))|>
   select(-path)
+
+if(cut=="industry"){
+  original_tbbl <- original_tbbl|>
+    mutate(which_file= word(which_file, sep="-"))
+  new_tbbl <- new_tbbl|>
+    mutate(which_file= word(which_file, sep="-"))
+}
 
 joined <- full_join(original_tbbl, new_tbbl)|>
   mutate(joined=map2(new_data, original_data, inner_join))|>
@@ -146,7 +147,7 @@ internal_vs_stokes_wrong <- stokes_cut|>
                                distinct())
 
 #manually check fuzzy join
-internal_vs_stokes_wrong[internal_vs_stokes_wrong$industry.x!=internal_vs_stokes_wrong$industry.y, ]
+internal_vs_stokes_wrong[internal_vs_stokes_wrong$industry.x!=internal_vs_stokes_wrong$industry.y, c(1,3)]
 
 internal_vs_stokes <-internal_vs_stokes_wrong|>
   rename(industry=industry.y)|>
@@ -193,7 +194,7 @@ lfs_data <- vroom::vroom(here("data", lfs_files))|>
   mutate(total=sum(`_COUNT_`))|>
   filter(total>0)|>
   select(-total)|>
-  #done
+  #zeros gone
   inner_join(mapping, by=c("NAICS_5"="naics_5"))|>
   group_by(lmo_detailed_industry, SYEAR, SMTH)|>
   summarise(value=sum(`_COUNT_`, na.rm=TRUE))|>

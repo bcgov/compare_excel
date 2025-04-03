@@ -2,6 +2,7 @@
 title: "Stokes cut comparer"
 output:
   flexdashboard::flex_dashboard:
+    source_code: "https://github.com/bcgov/compare_excel"
     orientation: columns
 runtime: shiny
 resource_files:
@@ -77,8 +78,15 @@ cagrs <- read_rds(here("out","cagrs.rds"))
 mapping <- read_excel(here("data","industry_mapping_2025_with_stokes_agg.xlsx"))
 lfs_data <- read_rds(here("out","lfs_data.rds"))
 industry_shares <- read_rds(here("out","industry_shares.rds"))|>
-  mutate(industry=str_trunc(industry, 25, "right"))|>
   filter(year>2001)
+
+if(length(unique(industry_shares$industry))>30){
+  industry_shares <- industry_shares|>
+    mutate(short_industry=str_trunc(industry, 20, "right"))
+}else{
+  industry_shares <- industry_shares|>
+    mutate(short_industry=str_trunc(industry, 1000, "right"))
+}
 region_shares <- read_rds(here("out","region_shares.rds"))
 files <- sort(unique(joined$which_file), decreasing = TRUE)
 stokes_regional_diff <- read_rds(here("out","stokes_regional_diff.rds"))
@@ -154,11 +162,6 @@ reactive_show_labels <- reactive({
   if_else(nrow(reactive_tbbl())<80, TRUE, FALSE)
 })
 ```
- 
- 
-Source code: [![github logo](github.png){width=100px}](https://github.com/bcgov/compare_excel){target='_blank'}
- 
- 
  
 Column {data-width=550}
 -------------------------------------
@@ -238,7 +241,7 @@ DT::renderDT({
 
 
 
-Comparison with internal employment forecast
+Comparison with internal
 =====================================  
 
 Column {data-width=325}
@@ -374,7 +377,7 @@ Column
 
 ### `r renderUI({input$industry})`
 
-```{r}
+```{r, fig.retina=2}
 plotly::renderPlotly({
   plt <- region_shares|>
     filter(industry==input$industry)|>
@@ -445,7 +448,7 @@ Column
 
 ### `r renderUI({input$region})`
 
-```{r}
+```{r, fig.retina=2}
 plotly::renderPlotly({
   plt <- industry_shares|>
     filter(bc_region==input$region)|>
@@ -453,7 +456,9 @@ plotly::renderPlotly({
                get(input$what2), 
                colour=source,
                group=source,
-               text=paste0("year: ",
+               text=paste0("industry:",
+                           industry, 
+                           "\n year: ",
                            year,
                            "\n series: ",
                            source,
@@ -467,10 +472,14 @@ plotly::renderPlotly({
                )
            )+
     geom_line()+
-    facet_wrap(~fct_reorder(industry, get(input$what2), max, .desc=TRUE), scales="free")+
+    facet_wrap(~fct_reorder(short_industry, get(input$what2), max, .desc=TRUE), scales="free_y")+
     labs(x=NULL,
          y=NULL)+
-    theme(legend.position='none')
+    theme(legend.position='none',
+    panel.spacing.x = unit(-1, "lines"), 
+    panel.spacing.y = unit(.25, "lines"),      
+    text=element_text(size=9)
+  )
   
 if(input$origin==TRUE){
     plt <- plt+ 
