@@ -27,6 +27,13 @@ conflicts_prefer(dplyr::filter)
 options(scipen = 999)
 min_abs_original <- 10
 #functions-----------------------
+symmetric_change <- function(old, new) {
+  denom <- (old + new) / 2
+  result <- ifelse(denom == 0 & new != old, 200 * sign(new - old), 
+                   ifelse(denom == 0, 0, (new - old) / denom * 100))
+  return(result)
+}
+
 my_dt <- function(tbbl) {
   DT::datatable(tbbl,
                 extensions = "Buttons",
@@ -102,11 +109,11 @@ Inputs {.sidebar data-width=400}
 -------------------------------------
 
 *  This app allows one to visualize what has changed between Stokes cuts, and how employment compares with our internal forecast.
-*  The heatmap on this page illustrates the pseudo-percent change between the current and last cut:
-$$\%\Delta = ((new-old)/(|old|+.1))*100$$
-*  Note that this will be very close to the *actual* percent change when the old magnitude is large, but will differ significantly when the old magnitude is close to zero.  
-*  Adding .1 to the denominator keeps the calculation from exploding when $|old|=0$.  
-*  Dark red indicates the current cut is much larger than the last cut, dark blue indicates much smaller. 
+*  The heatmap on this page illustrates the symmetric percent change between the current and last cut:
+$$\%\Delta = \frac{new-old}{\frac{new+old}{2}}*100$$
+*  If new+old=0, the magnitude of the percent change is set to 200.
+*  Red indicates the current cut is larger than the last cut, blue smaller.
+*  White indicates censoring, so very large percent changes do not swamp smaller changes. 
 *  You can zoom in by highlighting (click-dragging) a region of the heatmap. 
 *  You can **CLICK** on a row in the heatmap to see the underlying data.
 *  To zoom back out double click anywhere in the heatmap.
@@ -136,6 +143,15 @@ selectInput(
 
 checkboxInput("origin", "Are you Sazid? (should y axis include the origin)", value = FALSE)
 
+sliderInput(
+  "percent_less",
+  "Show |percentages| larger than this as white: ",
+  100,
+  min = 10,
+  max = 200,
+  step = 1
+)
+
 
 reactive_base <- reactive({
   temp <- joined|>
@@ -147,12 +163,13 @@ reactive_base <- reactive({
   temp[[1]]|>
     filter(year>=year(today()))|>
     group_by(variable)|>
-    mutate(percent_change=round(((new_value-original_value)/(abs(original_value)+.1))*100))
+    mutate(percent_change=round(symmetric_change(original_value, new_value)))
 })
 
 reactive_tbbl <- reactive({
    reactive_base()|>
     select(year, percent_change)|>
+    filter(abs(percent_change)<input$percent_less)|>
     pivot_wider(names_from = "year", values_from = "percent_change")|>
     column_to_rownames("variable")|>
     remove_empty("rows")
@@ -184,6 +201,7 @@ plotly::renderPlotly({
                          dendrogram=FALSE, 
                          key.title="percent change", 
                          fontsize_row = 8, 
+                         na.color = "white",
                          showticklabels = c(TRUE, reactive_show_labels()))|>
     plotly::config(displayModeBar = FALSE)|>
     onRender(js)

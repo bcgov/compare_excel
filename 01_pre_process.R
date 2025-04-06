@@ -1,6 +1,6 @@
 #' you need to set the cut type:
-#cut <- "macro"
-cut <- "industry"
+cut <- "macro"
+#cut <- "industry"
 
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)
@@ -39,7 +39,45 @@ if(cut=="macro"){
 }
 
 #functions----------------------
-read_sheet <- function(which_file, sheet, sub_directory, prepend){
+
+skip_meta <- function(path_to_file, sheet=1, meta_less_than=100, cutoff=.5){
+  extension <- tools::file_ext(path_to_file)
+  reader <- switch(extension,
+                   "csv" = readr::read_csv,
+                   "xlsx" = readxl::read_excel,
+                   "xls" = readxl::read_excel,
+                   stop("file needs to be either csv or excel")
+  )
+  temp <- reader(path_to_file, sheet, n_max = meta_less_than, col_names = FALSE) #read in first meta_less_than lines
+  skip <- which(rowSums(is.na(temp))<cutoff*ncol(temp))[1]-1 #which last mostly empty row?
+  reader(path_to_file, sheet, skip=skip, col_types="text")
+}
+
+correct_typos <- function(tbbl){
+  colnames(tbbl)[1] <- "variable" #first column missing name
+  tbbl|>
+    dplyr::mutate(variable=stringr::str_replace_all(variable, "MSW", "VIC"),
+                  variable=stringr::str_replace_all(variable, "TOK", "VIC"),
+                  variable=stringr::str_replace_all(variable, "KOO", "VIC"),
+                  variable=stringr::str_replace_all(variable, "CAR","VIC"),
+                  variable=stringr::str_replace_all(variable, "NCN", "VIC"),
+                  variable=stringr::str_replace_all(variable, "NE", "VIC"))
+}
+
+add_category <- function(tbbl){
+  tbbl|>
+    dplyr::mutate(category=grepl("^[A-Z &,\\-]+$", variable), #is value of variable in all caps?
+                  category=dplyr::if_else(category, variable, NA_character_), .before=variable)|> #if in all caps, category=variable, else NA
+    tidyr::fill(category, .direction = "down")|> #fill all the NAs downwards
+    na.omit()|>
+    mutate(category=str_replace_all(category, "BUSIVICSS", "BUSINESS"),
+           variable=str_replace_all(variable, "BUSIVICSS", "BUSINESS"),
+    )|>
+    mutate(across(starts_with("2"), as.numeric))|>
+    unite(variable, category, variable, sep = ": ")
+ }
+
+read_sheet <- function(which_file, sheet, sub_directory){
   tbbl <- read_excel(path=here("data", sub_directory, which_file),
                      sheet=sheet,
                      skip = skip,
@@ -49,8 +87,11 @@ read_sheet <- function(which_file, sheet, sub_directory, prepend){
   colnames(tbbl)[1] <- "variable" #missing name of the series identifier
 
   tbbl[-1] <- lapply(tbbl[-1], as.numeric) #convert 2nd--last column to numeric
+  tbbl
+}
 
-  tbbl <- tbbl|>
+make_long <- function(tbbl, prepend){
+  tbbl|>
     mutate(variable=paste0((row_number()+add_rows),": ", variable))|>
     filter(!is.na(variable),
            !str_detect(variable, "%")
@@ -80,15 +121,45 @@ original_tbbl <- tibble(which_file=list.files(here("data", old_folder)),
                         path=here("data", old_folder, which_file))|>
   mutate(sheet=map(path, get_sheets))|>
   unnest(sheet)|>
-  mutate(original_data=map2(which_file, sheet, read_sheet, old_folder, "original"))|>
+  filter(!(sheet=="Investment" & which_file != "BritishColumbiaTables.xlsx"))|> #regional investment wonky
+  mutate(original_data=map2(which_file, sheet, read_sheet, old_folder))|>
   select(-path)
 
 new_tbbl <- tibble(which_file=list.files(here("data", new_folder)),
                    path=here("data", new_folder, which_file))|>
   mutate(sheet=map(path, get_sheets))|>
   unnest(sheet)|>
-  mutate(new_data=map2(which_file, sheet, read_sheet, new_folder, "new"))|>
+  filter(!(sheet=="Investment" & which_file != "BritishColumbiaTables.xlsx"))|> #regional investment wonky
+  mutate(new_data=map2(which_file, sheet, read_sheet, new_folder))|>
   select(-path)
+
+#Regional investment sheets a bit wonky...
+
+ri_files <- list.files(here("data",
+                            old_folder))[str_detect(list.files(here("data",
+                                                                   old_folder)),
+                                                   "British",
+                                                   negate = TRUE)]
+
+ri_original <- tibble(which_file=ri_files,
+                      path=here("data", old_folder, which_file))|>
+  mutate(sheet="Investment",
+         original_data=map(path, skip_meta, sheet="Investment"),
+         original_data=map(original_data, correct_typos),
+         original_data=map(original_data, add_category))|>
+  select(-path)
+
+original_tbbl <- bind_rows(original_tbbl, ri_original)
+
+ri_new <- tibble(which_file=ri_files,
+                      path=here("data", new_folder, which_file))|>
+  mutate(sheet="Investment",
+         new_data=map(path, skip_meta, sheet="Investment"),
+         new_data=map(new_data, correct_typos),
+         new_data=map(new_data, add_category))|>
+  select(-path)
+
+new_tbbl <- bind_rows(new_tbbl, ri_new)
 
 if(cut=="industry"){
   original_tbbl <- original_tbbl|>
@@ -97,7 +168,9 @@ if(cut=="industry"){
     mutate(which_file= word(which_file, sep="-"))
 }
 
-joined <- full_join(original_tbbl, new_tbbl)|>
+joined <- inner_join(original_tbbl, new_tbbl)|>
+  mutate(original_data=map(original_data, make_long, "original"),
+         new_data=map(new_data, make_long, "new"))|>
   mutate(joined=map2(new_data, original_data, inner_join))|>
   select(-new_data, -original_data)
 

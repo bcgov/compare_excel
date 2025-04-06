@@ -9,13 +9,14 @@ tidy_up <- function(tbbl){
     filter(industry %in% stokes_industries)|>
     pivot_longer(cols=-industry, names_to = "year", values_to = "count")|>
     filter(year>=year(today()))|>
-    mutate(count=count*1000,
+    mutate(count=as.numeric(count),
+           count=count*1000,
            year=as.numeric(year))
 }
 get_regional_data <- function(folder_name){
   stokes_regional_files <- list.files(here("data", folder_name), pattern = "9", full.names = TRUE)
   tibble(bc_region=stokes_regional_files)|>
-    mutate(data=map(bc_region, read_excel, skip=2, sheet="LabourMarket2", na="NA", col_types=c("text",rep("numeric",25))),
+    mutate(data=map(bc_region, read_excel, skip=2, sheet="LabourMarket2", na="NA", col_types="text"),
            data=map(data, tidy_up),
            bc_region=unlist(qdapRegex::ex_between(stokes_regional_files, ")", ".")), #filename contains region between ) and .
            bc_region=str_replace_all(bc_region, "&"," and "))|>
@@ -31,7 +32,7 @@ get_regional_data <- function(folder_name){
 get_bc_data <- function(folder_name){
   stokes_files <- list.files(here("data", folder_name), pattern = "British", full.names = TRUE)
   tibble(bc_region=stokes_files)|>
-    mutate(data=map(bc_region, read_excel, skip=2, sheet="Labour Market", na="NA", col_types=c("text",rep("numeric",25))),
+    mutate(data=map(bc_region, read_excel, skip=2, sheet="Labour Market", na="NA", col_types="text"),
            data=map(data, tidy_up),
            bc_region="BritishColumbiaTables")|>
     unnest(data)|>
