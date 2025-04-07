@@ -145,13 +145,12 @@ checkboxInput("origin", "Are you Sazid? (should y axis include the origin)", val
 
 sliderInput(
   "percent_less",
-  "Show |percentages| larger than this as white: ",
+  "Show |percent_change| larger than this as white: ",
   100,
   min = 10,
   max = 200,
   step = 1
 )
-
 
 reactive_base <- reactive({
   temp <- joined|>
@@ -278,7 +277,7 @@ function(el, x) {
 }"
 
 temp <- internal_vs_stokes|>
-  mutate(percent_change=round(((stokes_cut-internal)/abs(internal))*100),
+  mutate(percent_change=round(symmetric_change(internal, stokes_cut),2), 
          name=as.numeric(name))|>
   select(industry, name, percent_change)|>
   filter(name>=(max(name)-10),
