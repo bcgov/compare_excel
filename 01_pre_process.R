@@ -40,6 +40,24 @@ if(cut=="macro"){
 
 #functions----------------------
 
+get_rmse <- function(tbbl){
+  sqrt(mean((tbbl$new_value-tbbl$original_value)^2))
+}
+
+get_smape <- function(tbbl){
+  mean(abs(tbbl$new_value-tbbl$original_value)/(abs(tbbl$new_value)+abs(tbbl$original_value)))
+}
+
+get_mean <- function(tbbl){
+  (mean(tbbl$new_value)+mean(tbbl$original_value))/2
+}
+
+clean_it <- function(tbbl){
+  tbbl|>
+    filter(year>=year(today()))|>
+    na.omit()
+}
+
 skip_meta <- function(path_to_file, sheet=1, meta_less_than=100, cutoff=.5){
   extension <- tools::file_ext(path_to_file)
   reader <- switch(extension,
@@ -92,10 +110,8 @@ read_sheet <- function(which_file, sheet, sub_directory){
 
 make_long <- function(tbbl, prepend){
   tbbl|>
-    mutate(variable=paste0((row_number()+add_rows),": ", variable))|>
-    filter(!is.na(variable),
-           !str_detect(variable, "%")
-           )|>
+    mutate(variable=paste0((row_number()+add_rows),": ", variable))|> #number the rows
+    filter(!str_detect(variable, "%"))|>
     pivot_longer(cols = -variable,
                  names_to = "year",
                  values_to = paste(prepend, "value", sep="_"))
@@ -171,8 +187,34 @@ if(cut=="industry"){
 joined <- inner_join(original_tbbl, new_tbbl)|>
   mutate(original_data=map(original_data, make_long, "original"),
          new_data=map(new_data, make_long, "new"))|>
-  mutate(joined=map2(new_data, original_data, inner_join))|>
+  mutate(joined=map2(new_data, original_data, inner_join),
+         joined=map(joined, clean_it))|>
   select(-new_data, -original_data)
+
+# smaller <- joined|>
+#   unnest(joined)|>
+#   group_by(which_file, sheet, variable)|>
+#   nest()|>
+#   mutate(rmse=map_dbl(data, get_rmse),
+#          smape=map_dbl(data, get_smape),
+#          size=map_dbl(data, get_mean)
+#          )
+#
+# plt <- ggplot(smaller, aes(rmse,
+#                            smape,
+#                            size=size,
+#                            colour=size,
+#                            alpha=size,
+#                            text=paste(
+#                              which_file,
+#                              sheet,
+#                              variable, sep="\n")))+
+#   geom_point()+
+#   scale_x_continuous(trans="log10")+
+#   scale_y_continuous(trans="log10")+
+#   scale_colour_viridis_c()
+#
+# plotly::ggplotly(plt, tooltip = "text")
 
 write_rds(joined, here("out","joined.rds"))
 
