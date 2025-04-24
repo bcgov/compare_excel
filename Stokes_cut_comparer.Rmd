@@ -306,7 +306,7 @@ reactive_tbbl2 <- reactive({
     mutate(date=ymd(paste(name, "06","01", sep="/")))|>
     select(-name)
 })
-
+ 
 reactive_lfs_last_year <- reactive({
   lfs_data|>
     group_by(industry)|>
