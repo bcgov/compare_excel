@@ -313,16 +313,20 @@ reactive_lfs_last_year <- reactive({
     mutate(value=zoo::rollmean(value, 12, align = "right", fill=NA),
            series="12 month rolling mean")|>
     bind_rows(lfs_data)|>
-    filter(industry==rev(rownames(temp))[input$point2$y])
+    filter(industry==rev(rownames(temp))[input$point2$y])|>
+    mutate(alpha=if_else(series=="12 month rolling mean", 1, .25))
 })
 
 plotly::renderPlotly({
   req(input$point2)
-  plt <- ggplot(reactive_tbbl2(), aes(date, value, colour=series))+
-    geom_line(alpha=.5)+
-    geom_line(data=reactive_lfs_last_year(), alpha=.5)+
+  plt <- ggplot()+
+    geom_line(data=reactive_tbbl2(), 
+              mapping= aes(date, value, colour=series))+
+    geom_line(data=reactive_lfs_last_year(), 
+              mapping= aes(date, value, colour=series, alpha=alpha))+
     scale_y_continuous(labels = scales::comma)+
     scale_colour_brewer(palette = "Dark2")+
+    scale_alpha_identity()
     labs(x=NULL,
          y=NULL,
          colour=NULL)
@@ -400,17 +404,24 @@ plotly::renderPlotly({
     filter(industry==input$industry)|>
     ggplot(aes(year, 
                get(input$what), 
-               colour=source,
-               group=source,
+               colour=series,
+               group=series,
+               alpha=alpha,
                text=paste0("year: ",
                            year,
                            "\n series: ",
-                           source,
+                           series,
                            "\n value: ",
                            if(input$what=="count"){
-                             scales::comma(get(input$what))
+                             scales::comma(get(input$what), accuracy = 1)
                            }else{
                              scales::percent(get(input$what), accuracy = .1)
+                           },
+                           "\n CAGR: ",
+                           if(input$what=="count"){
+                             scales::percent(count_cagr, accuracy = .1)
+                           }else{
+                             scales::percent(share_cagr, accuracy = .1)
                            }
                            )
                )
@@ -419,7 +430,9 @@ plotly::renderPlotly({
     facet_wrap(~fct_reorder(bc_region, get(input$what), max, .desc=TRUE), scales="free")+
     labs(x=NULL,
          y=NULL)+
-    theme(legend.position='none')
+    theme(legend.position='none')+
+    scale_colour_brewer(palette = "Dark2")+
+    scale_alpha_identity()
   
  if(input$origin==TRUE){
     plt <- plt+ 
@@ -471,19 +484,24 @@ plotly::renderPlotly({
     filter(bc_region==input$region)|>
     ggplot(aes(year, 
                get(input$what2), 
-               colour=source,
-               group=source,
-               text=paste0("industry:",
-                           industry, 
-                           "\n year: ",
+               colour=series,
+               group=series,
+               alpha=alpha,
+               text=paste0("year: ",
                            year,
                            "\n series: ",
-                           source,
+                           series,
                            "\n value: ",
                            if(input$what2=="count"){
-                             scales::comma(get(input$what2))
+                             scales::comma(get(input$what2), accuracy = 1)
                            }else{
                              scales::percent(get(input$what2), accuracy = .1)
+                           },
+                           "\n CAGR: ",
+                           if(input$what2=="count"){
+                             scales::percent(count_cagr, accuracy = .1)
+                           }else{
+                             scales::percent(share_cagr, accuracy = .1)
                            }
                            )
                )
@@ -492,11 +510,12 @@ plotly::renderPlotly({
     facet_wrap(~fct_reorder(short_industry, get(input$what2), max, .desc=TRUE), scales="free_y")+
     labs(x=NULL,
          y=NULL)+
+    scale_colour_brewer(palette = "Dark2")+
+    scale_alpha_identity()+
     theme(legend.position='none',
     panel.spacing.x = unit(-1, "lines"), 
     panel.spacing.y = unit(.25, "lines"),      
-    text=element_text(size=9)
-  )
+    text=element_text(size=9))
   
 if(input$origin==TRUE){
     plt <- plt+ 

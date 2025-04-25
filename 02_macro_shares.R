@@ -2,7 +2,29 @@ library(tidyverse)
 library(here)
 library(readxl)
 library(janitor)
+library(fpp3)
+library(conflicted)
+conflicts_prefer(dplyr::filter)
 #functions--------------------------
+stl_decomp <- function(tbbl, var){
+  tbbl |>
+    model(STL({{  var  }}))|>
+    components()|>
+    tibble()|>
+    select(year, LFS={{  var  }}, `LFS trend`=trend)|>
+    pivot_longer(-year, names_to="series", values_to="value")
+}
+
+get_cagr <- function(tbbl, var){
+  end <- tbbl|>
+    filter(year==max(year)) |>
+    pull({{ var }})
+  start <- tbbl|>
+    filter(year==max(year)-10) |>
+    pull({{ var }})
+  cagr <- (end/start)^(1/10)-1
+}
+
 tidy_up <- function(tbbl){
   colnames(tbbl)[1] <- "industry"
   tbbl|>
@@ -93,6 +115,38 @@ all_regions <- all_data|>
 
 by_region <- bind_rows(all_regions, by_region)
 
+#smooth and add cagrs---------------------------------
+
+by_region%>%
+  split(.$source) %>%
+  list2env(envir = .GlobalEnv)
+
+new <- new|>
+  mutate(series="Stokes")|>
+  ungroup()|>
+  select(-source)
+
+lfs <- lfs|>
+  group_by(bc_region, industry) |>
+  nest()|>
+  mutate(data=map(data, as_tsibble, index=year),
+         counts=map(data, stl_decomp, count),
+         shares=map(data, stl_decomp, share))|>
+  select(industry, bc_region, shares, counts)
+
+region_shares <- lfs|>
+  unnest(c(shares, counts), names_sep = "_")|>
+  select(year=shares_year, industry, bc_region, series= shares_series, share=shares_value, count= counts_value)|>
+  bind_rows(new)|>
+  group_by(industry, bc_region, series) |>
+  nest()|>
+  mutate(count_cagr=map_dbl(data, get_cagr, "count"),
+         share_cagr=map_dbl(data, get_cagr, "share"),
+         alpha=if_else(series=="LFS", .25, 1))|>
+  unnest(data)
+
+# by industry --------------------------------------
+
 by_industry <- all_data|>
   group_by(year, industry, source)|>
   mutate(share=count/sum(count, na.rm = TRUE)) #annual regional shares by industry
@@ -105,6 +159,36 @@ all_industries <- all_data|>
          industry="All industries")
 
 by_industry <- bind_rows(by_industry, all_industries)
+
+#smooth and add cagrs---------------------------------
+
+by_industry%>%
+  split(.$source) %>%
+  list2env(envir = .GlobalEnv)
+
+new <- new|>
+  mutate(series="Stokes")|>
+  ungroup()|>
+  select(-source)
+
+lfs <- lfs|>
+  group_by(bc_region, industry) |>
+  nest()|>
+  mutate(data=map(data, as_tsibble, index=year),
+         counts=map(data, stl_decomp, count),
+         shares=map(data, stl_decomp, share))|>
+  select(industry, bc_region, shares, counts)
+
+industry_shares <- lfs|>
+  unnest(c(shares, counts), names_sep = "_")|>
+  select(year=shares_year, industry, bc_region, series= shares_series, share=shares_value, count= counts_value)|>
+  bind_rows(new)|>
+  group_by(industry, bc_region, series) |>
+  nest()|>
+  mutate(count_cagr=map_dbl(data, get_cagr, "count"),
+         share_cagr=map_dbl(data, get_cagr, "share"),
+         alpha=if_else(series=="LFS", .25, 1))|>
+  unnest(data)
 
 #Sazid regional stuff------------------------
 stokes_data_old <- get_regional_data("macro_old")|>
@@ -150,6 +234,6 @@ stokes_regional_diff <- bind_rows(stokes_regional, stokes_bc)|>
 
 
 #write to disk------------------------------
-write_rds(by_industry, here("out","industry_shares.rds"))
-write_rds(by_region, here("out","region_shares.rds"))
+write_rds(industry_shares, here("out","industry_shares.rds"))
+write_rds(region_shares, here("out","region_shares.rds"))
 write_rds(stokes_regional_diff, here("out","stokes_regional_diff.rds"))

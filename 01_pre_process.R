@@ -191,31 +191,6 @@ joined <- inner_join(original_tbbl, new_tbbl)|>
          joined=map(joined, clean_it))|>
   select(-new_data, -original_data)
 
-# smaller <- joined|>
-#   unnest(joined)|>
-#   group_by(which_file, sheet, variable)|>
-#   nest()|>
-#   mutate(rmse=map_dbl(data, get_rmse),
-#          smape=map_dbl(data, get_smape),
-#          size=map_dbl(data, get_mean)
-#          )
-#
-# plt <- ggplot(smaller, aes(rmse,
-#                            smape,
-#                            size=size,
-#                            colour=size,
-#                            alpha=size,
-#                            text=paste(
-#                              which_file,
-#                              sheet,
-#                              variable, sep="\n")))+
-#   geom_point()+
-#   scale_x_continuous(trans="log10")+
-#   scale_y_continuous(trans="log10")+
-#   scale_colour_viridis_c()
-#
-# plotly::ggplotly(plt, tooltip = "text")
-
 write_rds(joined, here("out","joined.rds"))
 
 ############ internal_vs_stokes------------------------
