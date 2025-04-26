@@ -15,6 +15,7 @@ library(here)
 library(readxl)
 library(janitor)
 library(assertthat)
+library(fpp3)
 library(conflicted)
 conflicts_prefer(dplyr::filter)
 conflicts_prefer(dplyr::lag)
@@ -39,6 +40,37 @@ if(cut=="macro"){
 }
 
 #functions----------------------
+
+stl_decomp <- function(tbbl){
+  tbbl |>
+    model(STL(value))|>
+    components()|>
+    tibble()|>
+    select(date, LFS=value, `LFS trend`=trend)|>
+    pivot_longer(-date, names_to="series", values_to="value")
+}
+
+get_monthly_cagr <- function(tbbl){
+  end <- tbbl$value[tbbl$date==max(tbbl$date)]
+  start <- tbbl$value[ym(tbbl$date)==(ym(max(tbbl$date))-years(10))]
+  (end/start)^(1/10)-1
+}
+
+get_cagr <- function(tbbl){
+  end <- tbbl$value[tbbl$date==max(tbbl$date)]
+  start <- tbbl$value[tbbl$date==max(tbbl$date)-years(10)]
+  cagr <- (end/start)^(1/10)-1
+}
+
+get_cagr2 <- function(tbbl){
+  tbbl <- tbbl|>
+    mutate(year=as.numeric(year))
+  end <- tbbl$value[tbbl$year==max(tbbl$year)]
+  start <- tbbl$value[tbbl$year==(max(tbbl$year)-10)]
+  cagr <- (end/start)^(1/10)-1
+}
+
+
 
 get_rmse <- function(tbbl){
   sqrt(mean((tbbl$new_value-tbbl$original_value)^2))
@@ -193,6 +225,17 @@ joined <- inner_join(original_tbbl, new_tbbl)|>
 
 write_rds(joined, here("out","joined.rds"))
 
+joined|>
+  mutate(joined=map(joined, pivot_longer, cols=c("new_value", "original_value"), names_to = "series"))|>
+  unnest(joined)|>
+  group_by(which_file, sheet, variable, series)|>
+  nest()|>
+  mutate(cagr=map_dbl(data, get_cagr2))|>
+  unnest(data)|>
+  write_rds(here("out", "joined_with_cagrs.rds"))
+
+
+
 ############ internal_vs_stokes------------------------
 
 mapping <- read_excel(here("data", "industry_mapping_2025_with_stokes_agg.xlsx"))
@@ -228,8 +271,7 @@ internal_vs_stokes_wrong <- stokes_cut|>
   filter(!industry %in% c("Total", "% Change"),
          !is.na(industry))|>
   group_by(industry)|>
-  mutate(stokes_cut=1000*stokes_cut,
-         stokes_growth=stokes_cut/lag(stokes_cut)-1)|>
+  mutate(stokes_cut=1000*stokes_cut)|>
   nest()|>
   fuzzyjoin::stringdist_join(internal|>
                                ungroup()|>
@@ -249,13 +291,24 @@ internal_vs_stokes <-internal_vs_stokes_wrong|>
 internal_vs_stokes_totals <- internal_vs_stokes|>
   group_by(name)|>
   summarize(stokes_cut=sum(stokes_cut),
-            internal=sum(internal),
-            stokes_growth=mean(stokes_growth))|>
+            internal=sum(internal))|>
   mutate(industry="Total")
 
 internal_vs_stokes <- bind_rows(internal_vs_stokes, internal_vs_stokes_totals)
 
 write_rds(internal_vs_stokes, here("out","internal_vs_stokes.rds"))
+
+internal_vs_stokes|>
+  mutate(name=as.numeric(name))|>
+  filter(name>=(max(name)-10))|> #only the forecast period
+  pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
+  mutate(date=ymd(paste(name, "06","01", sep="/")))|>
+  select(-name)|>
+  group_by(industry, series)|>
+  nest()|>
+  mutate(cagr=map_dbl(data, get_cagr))|>
+  unnest(data)|>
+  write_rds(here("out","with_cagrs.rds"))
 
 # CAGR stuff----------------------------------------
 
@@ -307,7 +360,21 @@ lfs_data_totals <- lfs_data|>
   summarize(value=sum(value))|>
   mutate(industry="Total")
 
-lfs_data <- bind_rows(lfs_data, lfs_data_totals)
+#add in the trend and cagrs
+
+lfs_data <- bind_rows(lfs_data, lfs_data_totals)|>
+  mutate(date=yearmonth(date))|>
+  group_by(industry) |>
+  nest()|>
+  mutate(data=map(data, tsibble, index=date),
+         data=map(data, stl_decomp))|>
+  unnest(data)|>
+  group_by(industry, series) |>
+  nest()|>
+  mutate(cagr=map_dbl(data, get_monthly_cagr),
+         alpha=if_else(series=="LFS", .25, 1))|>
+  unnest(data)|>
+  mutate(date=ym(date))
 
 write_rds(lfs_data, here("out","lfs_data.rds"))
 

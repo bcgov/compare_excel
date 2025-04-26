@@ -6,22 +6,18 @@ library(fpp3)
 library(conflicted)
 conflicts_prefer(dplyr::filter)
 #functions--------------------------
-stl_decomp <- function(tbbl, var){
+stl_decomp <- function(tbbl){
   tbbl |>
-    model(STL({{  var  }}))|>
+    model(STL(value))|>
     components()|>
     tibble()|>
-    select(year, LFS={{  var  }}, `LFS trend`=trend)|>
+    select(year, LFS=value, `LFS trend`=trend)|>
     pivot_longer(-year, names_to="series", values_to="value")
 }
 
-get_cagr <- function(tbbl, var){
-  end <- tbbl|>
-    filter(year==max(year)) |>
-    pull({{ var }})
-  start <- tbbl|>
-    filter(year==max(year)-10) |>
-    pull({{ var }})
+get_cagr <- function(tbbl){
+  end <- tbbl$value[tbbl$year==max(tbbl$year)]
+  start <- tbbl$value[tbbl$year==max(tbbl$year)-10]
   cagr <- (end/start)^(1/10)-1
 }
 
@@ -100,7 +96,7 @@ stokes_data <- get_regional_data("macro_new")
 
 all_data <- bind_rows(lfs_data, stokes_data)
 
-#aggregate
+#aggregate by region
 
 by_region <- all_data|>
   group_by(year, bc_region, source)|>
@@ -113,7 +109,8 @@ all_regions <- all_data|>
   mutate(share=count/sum(count, na.rm = TRUE),
          bc_region="British Columbia")
 
-by_region <- bind_rows(all_regions, by_region)
+by_region <- bind_rows(all_regions, by_region)|>
+  pivot_longer(cols=c("count","share"))
 
 #smooth and add cagrs---------------------------------
 
@@ -126,22 +123,16 @@ new <- new|>
   ungroup()|>
   select(-source)
 
-lfs <- lfs|>
-  group_by(bc_region, industry) |>
+region_shares <- lfs|>
+  group_by(bc_region, industry, name) |>
   nest()|>
   mutate(data=map(data, as_tsibble, index=year),
-         counts=map(data, stl_decomp, count),
-         shares=map(data, stl_decomp, share))|>
-  select(industry, bc_region, shares, counts)
-
-region_shares <- lfs|>
-  unnest(c(shares, counts), names_sep = "_")|>
-  select(year=shares_year, industry, bc_region, series= shares_series, share=shares_value, count= counts_value)|>
+         data=map(data, stl_decomp))|>
+  unnest(data)|>
   bind_rows(new)|>
-  group_by(industry, bc_region, series) |>
+  group_by(industry, bc_region, name, series) |>
   nest()|>
-  mutate(count_cagr=map_dbl(data, get_cagr, "count"),
-         share_cagr=map_dbl(data, get_cagr, "share"),
+  mutate(cagr=map_dbl(data, get_cagr),
          alpha=if_else(series=="LFS", .25, 1))|>
   unnest(data)
 
@@ -158,7 +149,8 @@ all_industries <- all_data|>
   mutate(share=count/sum(count, na.rm = TRUE),
          industry="All industries")
 
-by_industry <- bind_rows(by_industry, all_industries)
+by_industry <- bind_rows(by_industry, all_industries)|>
+  pivot_longer(cols=c("count","share"))
 
 #smooth and add cagrs---------------------------------
 
@@ -171,24 +163,19 @@ new <- new|>
   ungroup()|>
   select(-source)
 
-lfs <- lfs|>
-  group_by(bc_region, industry) |>
+industry_shares <- lfs|>
+  group_by(bc_region, industry, name) |>
   nest()|>
   mutate(data=map(data, as_tsibble, index=year),
-         counts=map(data, stl_decomp, count),
-         shares=map(data, stl_decomp, share))|>
-  select(industry, bc_region, shares, counts)
-
-industry_shares <- lfs|>
-  unnest(c(shares, counts), names_sep = "_")|>
-  select(year=shares_year, industry, bc_region, series= shares_series, share=shares_value, count= counts_value)|>
+         data=map(data, stl_decomp))|>
+  unnest(data)|>
   bind_rows(new)|>
-  group_by(industry, bc_region, series) |>
+  group_by(industry, bc_region, name, series) |>
   nest()|>
-  mutate(count_cagr=map_dbl(data, get_cagr, "count"),
-         share_cagr=map_dbl(data, get_cagr, "share"),
+  mutate(cagr=map_dbl(data, get_cagr),
          alpha=if_else(series=="LFS", .25, 1))|>
   unnest(data)
+
 
 #Sazid regional stuff------------------------
 stokes_data_old <- get_regional_data("macro_old")|>

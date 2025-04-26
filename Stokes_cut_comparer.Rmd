@@ -27,6 +27,7 @@ conflicts_prefer(dplyr::filter)
 options(scipen = 999)
 min_abs_original <- 10
 #functions-----------------------
+
 symmetric_change <- function(old, new) {
   denom <- (old + new) / 2
   result <- ifelse(denom == 0 & new != old, 200 * sign(new - old), 
@@ -80,7 +81,9 @@ cagr_plot <- function(tbbl, xvar, yvar, highlight_industry){
 
 ```{r}
 joined <- read_rds(here("out","joined.rds"))
+joined_with_cagrs <-  read_rds(here("out", "joined_with_cagrs.rds"))
 internal_vs_stokes <- read_rds(here("out","internal_vs_stokes.rds"))
+with_cagrs <- read_rds(here("out","with_cagrs.rds"))
 cagrs <- read_rds(here("out","cagrs.rds"))
 mapping <- read_excel(here("data","industry_mapping_2025_with_stokes_agg.xlsx"))
 lfs_data <- read_rds(here("out","lfs_data.rds"))
@@ -213,33 +216,43 @@ Column {data-width=450}
 ### A plot of the original and new values of row...
 
 ```{r}
+
+reactive_compare <- reactive({
+  joined_with_cagrs|>
+  filter(which_file==input$file,
+         sheet==input$sheet)
+})
+
 plotly::renderPlotly({
   req(input$point)
-  plt <- reactive_base()|>
+  plt <- reactive_compare()|>
     filter(variable==rev(rownames(reactive_tbbl()))[input$point$y])|>
-    mutate(new_10_cagr=((tail(new_value, n=1)-head(new_value, n=1)+abs(head(new_value, n=1)))/(abs(head(new_value, n=1))))^(.1)-1,
-           original_10_cagr=((tail(original_value, n=1)-head(original_value, n=1)+abs(head(original_value, n=1)))/(abs(head(original_value, n=1))))^(.1)-1,
-           new_10_cagr=scales::percent(new_10_cagr, accuracy=.1),
-           original_10_cagr=scales::percent(original_10_cagr, accuracy=.1)
-          )|>
-    pivot_longer(cols = c(new_value, original_value))|>
-    mutate(year=as.numeric(year))|>
     ggplot(aes(year,
                value,
-               colour=name,
-               text=paste0(
-                 "Original 10 year CAGR: ",
-                 original_10_cagr,
-                 "\n New 10 year CAGR: ",
-                 new_10_cagr)))+
+               colour=series,
+               group=series,
+               text=paste0("Year: ",
+                            year,
+                            "\n Series: ",
+                             series,
+                            "\n Value: ",
+                             scales::comma(value, accuracy = 1),
+                            "\n CAGR: ",
+                            scales::percent(cagr, accuracy = .1))))+
     geom_line()+
-    labs(title=rev(rownames(reactive_tbbl()))[input$point$y])
+    scale_colour_brewer(palette = "Dark2")+
+    scale_y_continuous(labels = scales::comma)+
+    labs(title=rev(rownames(reactive_tbbl()))[input$point$y],
+         x=NULL,
+         y=NULL,
+         colour=NULL)
  
   if(input$origin==TRUE){
     plt <- plt+ 
       expand_limits(y = 1)
   }
-  plotly::ggplotly(plt)
+  plotly::ggplotly(plt, tooltip="text")%>%
+    plotly::layout(hovermode = "x")
 })
 ```
 
@@ -297,36 +310,53 @@ Column{.tabset}
 
 ```{r}
 reactive_tbbl2 <- reactive({
- internal_vs_stokes|>
-    mutate(name=as.numeric(name))|>
-    filter(name>=(max(name)-10))|> #only the forecast period
-    select(-stokes_growth)|>
-    pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
-    filter(industry==rev(rownames(temp))[input$point2$y])|>
-    mutate(date=ymd(paste(name, "06","01", sep="/")))|>
-    select(-name)
+ with_cagrs|>
+    filter(industry==rev(rownames(temp))[input$point2$y])
 })
  
-reactive_lfs_last_year <- reactive({
+reactive_lfs <- reactive({
   lfs_data|>
-    group_by(industry)|>
-    mutate(value=zoo::rollmean(value, 12, align = "right", fill=NA),
-           series="12 month rolling mean")|>
-    bind_rows(lfs_data)|>
-    filter(industry==rev(rownames(temp))[input$point2$y])|>
-    mutate(alpha=if_else(series=="12 month rolling mean", 1, .25))
+    filter(industry==rev(rownames(temp))[input$point2$y])
 })
 
 plotly::renderPlotly({
   req(input$point2)
   plt <- ggplot()+
     geom_line(data=reactive_tbbl2(), 
-              mapping= aes(date, value, colour=series))+
-    geom_line(data=reactive_lfs_last_year(), 
-              mapping= aes(date, value, colour=series, alpha=alpha))+
+              mapping= aes(date, 
+                           value, 
+                           colour=series,
+                           group=series,
+                           text=paste(
+                             "Date: ",
+                             date,
+                             "\n Series: ",
+                             series,
+                             "\n Value: ",
+                             scales::comma(value, accuracy = 1),
+                             "\n CAGR: ",
+                             scales::percent(cagr, accuracy = .1)
+                            )
+                           )
+              )+
+    geom_line(data=reactive_lfs(), 
+              mapping= aes(date, 
+                           value, 
+                           colour=series,
+                           group=series,
+                           alpha=alpha,
+                           text=paste("Date: ",
+                                      date,
+                                      "\n Series: ",
+                                      series,
+                                      "\n Value: ",
+                                      scales::comma(value, accuracy = 1),
+                                      "\n CAGR: ",
+                                      scales::percent(cagr, accuracy = .1)
+                                      )))+
     scale_y_continuous(labels = scales::comma)+
     scale_colour_brewer(palette = "Dark2")+
-    scale_alpha_identity()
+    scale_alpha_identity()+
     labs(x=NULL,
          y=NULL,
          colour=NULL)
@@ -335,7 +365,8 @@ plotly::renderPlotly({
     plt <- plt+
       expand_limits(y = 0)
   }
-  plotly::ggplotly(plt)
+  plotly::ggplotly(plt, tooltip="text")%>%
+  plotly::layout(hovermode = "x")
 })
 ```
 
@@ -401,9 +432,10 @@ Column
 ```{r, fig.retina=2}
 plotly::renderPlotly({
   plt <- region_shares|>
-    filter(industry==input$industry)|>
+    filter(industry==input$industry,
+           name==input$what)|>
     ggplot(aes(year, 
-               get(input$what), 
+               value, 
                colour=series,
                group=series,
                alpha=alpha,
@@ -413,21 +445,15 @@ plotly::renderPlotly({
                            series,
                            "\n value: ",
                            if(input$what=="count"){
-                             scales::comma(get(input$what), accuracy = 1)
+                             scales::comma(value, accuracy = 1)
                            }else{
-                             scales::percent(get(input$what), accuracy = .1)
-                           },
-                           "\n CAGR: ",
-                           if(input$what=="count"){
-                             scales::percent(count_cagr, accuracy = .1)
-                           }else{
-                             scales::percent(share_cagr, accuracy = .1)
+                             scales::percent(value, accuracy = .1)
                            }
-                           )
-               )
-           )+
+                           ,
+                           "\n CAGR: ",
+                            scales::percent(cagr, accuracy = .1))))+
     geom_line()+
-    facet_wrap(~fct_reorder(bc_region, get(input$what), max, .desc=TRUE), scales="free")+
+    facet_wrap(~fct_reorder(bc_region, value, max, .desc=TRUE), scales="free")+
     labs(x=NULL,
          y=NULL)+
     theme(legend.position='none')+
@@ -481,9 +507,10 @@ Column
 ```{r, fig.retina=2}
 plotly::renderPlotly({
   plt <- industry_shares|>
-    filter(bc_region==input$region)|>
+    filter(bc_region==input$region,
+           name==input$what2)|>
     ggplot(aes(year, 
-               get(input$what2), 
+               value, 
                colour=series,
                group=series,
                alpha=alpha,
@@ -493,21 +520,17 @@ plotly::renderPlotly({
                            series,
                            "\n value: ",
                            if(input$what2=="count"){
-                             scales::comma(get(input$what2), accuracy = 1)
+                             scales::comma(value, accuracy = 1)
                            }else{
-                             scales::percent(get(input$what2), accuracy = .1)
+                             scales::percent(value, accuracy = .1)
                            },
                            "\n CAGR: ",
-                           if(input$what2=="count"){
-                             scales::percent(count_cagr, accuracy = .1)
-                           }else{
-                             scales::percent(share_cagr, accuracy = .1)
-                           }
+                           scales::percent(cagr, accuracy = .1)
                            )
                )
            )+
     geom_line()+
-    facet_wrap(~fct_reorder(short_industry, get(input$what2), max, .desc=TRUE), scales="free_y")+
+    facet_wrap(~fct_reorder(short_industry, value, max, .desc=TRUE), scales="free_y")+
     labs(x=NULL,
          y=NULL)+
     scale_colour_brewer(palette = "Dark2")+
