@@ -15,10 +15,18 @@ stl_decomp <- function(tbbl){
     pivot_longer(-year, names_to="series", values_to="value")
 }
 
-get_cagr <- function(tbbl){
-  end <- tbbl$value[tbbl$year==max(tbbl$year)]
-  start <- tbbl$value[tbbl$year==max(tbbl$year)-10]
-  cagr <- (end/start)^(1/10)-1
+get_cagr <- function(tbbl){#between years not enough data for 10 year cagr
+  span <- max(tbbl$year) - min(tbbl$year)
+  if(span>=10){
+    end <- tbbl$value[tbbl$year==max(tbbl$year)]
+    start <- tbbl$value[tbbl$year==max(tbbl$year)-10]
+    elapsed <- 10
+  } else {
+    end <- tbbl$value[tbbl$year==max(tbbl$year)]
+    start <- tbbl$value[tbbl$year==min(tbbl$year)]
+    elapsed <- max(tbbl$year) - min(tbbl$year)
+  }
+  (end/start)^(1/elapsed)-1
 }
 
 tidy_up <- function(tbbl){

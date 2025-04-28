@@ -27,14 +27,6 @@ conflicts_prefer(dplyr::filter)
 options(scipen = 999)
 min_abs_original <- 10
 #functions-----------------------
-
-symmetric_change <- function(old, new) {
-  denom <- (old + new) / 2
-  result <- ifelse(denom == 0 & new != old, 200 * sign(new - old), 
-                   ifelse(denom == 0, 0, (new - old) / denom * 100))
-  return(result)
-}
-
 my_dt <- function(tbbl) {
   DT::datatable(tbbl,
                 extensions = "Buttons",
@@ -81,9 +73,7 @@ cagr_plot <- function(tbbl, xvar, yvar, highlight_industry){
 
 ```{r}
 joined <- read_rds(here("out","joined.rds"))
-joined_with_cagrs <-  read_rds(here("out", "joined_with_cagrs.rds"))
 internal_vs_stokes <- read_rds(here("out","internal_vs_stokes.rds"))
-with_cagrs <- read_rds(here("out","with_cagrs.rds"))
 cagrs <- read_rds(here("out","cagrs.rds"))
 mapping <- read_excel(here("data","industry_mapping_2025_with_stokes_agg.xlsx"))
 lfs_data <- read_rds(here("out","lfs_data.rds"))
@@ -95,7 +85,7 @@ if(length(unique(industry_shares$industry))>30){
     mutate(short_industry=str_trunc(industry, 20, "right"))
 }else{
   industry_shares <- industry_shares|>
-    mutate(short_industry=str_trunc(industry, 1000, "right"))
+    mutate(short_industry=industry)
 }
 region_shares <- read_rds(here("out","region_shares.rds"))
 files <- sort(unique(joined$which_file), decreasing = TRUE)
@@ -156,21 +146,17 @@ sliderInput(
 )
 
 reactive_base <- reactive({
-  temp <- joined|>
+  joined|>
+    select(-cagr)|>
     filter(which_file==input$file, 
-           sheet==input$sheet
-           )|>
-    pull(joined)
-  
-  temp[[1]]|>
-    filter(year>=year(today()))|>
-    group_by(variable)|>
-    mutate(percent_change=round(symmetric_change(original_value, new_value)))
+           sheet==input$sheet)
 })
 
 reactive_tbbl <- reactive({
    reactive_base()|>
-    select(year, percent_change)|>
+    ungroup()|>
+    filter(series=="new_value")|>
+    select(year, variable, percent_change)|>
     filter(abs(percent_change)<input$percent_less)|>
     pivot_wider(names_from = "year", values_from = "percent_change")|>
     column_to_rownames("variable")|>
@@ -188,6 +174,9 @@ Column {data-width=550}
 ### `r renderUI({ paste(input$file, input$sheet, sep=": ")})`
     
 ```{r}
+
+
+
 js <- "
 function(el, x) {
   el.on('plotly_click', function(d) {
@@ -199,10 +188,10 @@ function(el, x) {
 plotly::renderPlotly({
   req(input$file)
   req(input$sheet)
-  heatmaply::heatmaply_cor(reactive_tbbl(), 
-                         dendrogram=FALSE, 
-                         key.title="percent change", 
-                         fontsize_row = 8, 
+  heatmaply::heatmaply_cor(reactive_tbbl(),
+                         dendrogram=FALSE,
+                         key.title="percent change",
+                         fontsize_row = 8,
                          na.color = "white",
                          showticklabels = c(TRUE, reactive_show_labels()))|>
     plotly::config(displayModeBar = FALSE)|>
@@ -218,7 +207,7 @@ Column {data-width=450}
 ```{r}
 
 reactive_compare <- reactive({
-  joined_with_cagrs|>
+  joined|>
   filter(which_file==input$file,
          sheet==input$sheet)
 })
@@ -264,12 +253,15 @@ DT::renderDT({
   req(input$point)
   reactive_base()|>
     filter(variable==rev(rownames(reactive_tbbl()))[input$point$y])|>
+    ungroup()|>
+    pivot_wider(names_from = "series", values_from = "value")|>
     select(year, new_value, original_value, percent_change)|>
+    mutate(percent_change=round(percent_change,1),
+           new_value=scales::comma(new_value, accuracy = 1),
+           original_value=scales::comma(original_value, accuracy = 1))|>
     DT::datatable( rownames = FALSE)
 })
 ```
-
-
 
 Comparison with internal
 =====================================  
@@ -290,15 +282,14 @@ function(el, x) {
 }"
 
 temp <- internal_vs_stokes|>
-  mutate(percent_change=round(symmetric_change(internal, stokes_cut),2), 
-         name=as.numeric(name))|>
-  select(industry, name, percent_change)|>
-  filter(name>=(max(name)-10),
-         industry!="Total")|>
-  pivot_wider(id_cols = industry, names_from = "name", values_from = "percent_change")|>
+  ungroup()|>
+  select(industry, date, percent_change)|>
+  filter(industry!="Total")|>
+  distinct()|>
+  pivot_wider(id_cols = industry, names_from = "date", values_from = "percent_change")|>
   column_to_rownames("industry")
 
-  heatmaply::heatmaply_cor(temp, dendrogram=FALSE, key.title="percent change", showticklabels = c(TRUE, FALSE))|>
+  heatmaply::heatmaply_cor(temp, dendrogram=FALSE, key.title="percent change", showticklabels = c(FALSE, FALSE))|>
   onRender(js2)
 ```
  
@@ -310,7 +301,7 @@ Column{.tabset}
 
 ```{r}
 reactive_tbbl2 <- reactive({
- with_cagrs|>
+ internal_vs_stokes|>
     filter(industry==rev(rownames(temp))[input$point2$y])
 })
  

@@ -1,8 +1,33 @@
 library(tidyverse)
 library(here)
 library(janitor)
+library(fpp3)
 library(readxl)
+library(conflicted)
+conflicts_prefer(dplyr::filter)
 #functions--------------------------
+stl_decomp <- function(tbbl){
+  tbbl |>
+    model(STL(value))|>
+    components()|>
+    tibble()|>
+    select(year, LFS=value, `LFS trend`=trend)|>
+    pivot_longer(-year, names_to="series", values_to="value")
+}
+get_cagr <- function(tbbl){#between years not enough data for 10 year cagr
+  span <- max(tbbl$year) - min(tbbl$year)
+  if(span>=10){
+    end <- tbbl$value[tbbl$year==max(tbbl$year)]
+    start <- tbbl$value[tbbl$year==max(tbbl$year)-10]
+    elapsed <- 10
+  } else {
+    end <- tbbl$value[tbbl$year==max(tbbl$year)]
+    start <- tbbl$value[tbbl$year==min(tbbl$year)]
+    elapsed <- max(tbbl$year) - min(tbbl$year)
+  }
+  (end/start)^(1/elapsed)-1
+}
+
 get_sheet <- function(sheet, folder_name){
   file <- list.files(here("data",folder_name), pattern = "IndustryEmploymentBC")
 
@@ -53,7 +78,6 @@ correct_names <- read_excel(here("data","industry_mapping_2025_with_stokes_agg.x
 file_path <-here("data", "Employment for 64 LMO Industries 2000-2024.xlsx")
 sheet_names <- excel_sheets(file_path)[-c(1,5,6)] #could fail
 
-
 lfs_data <- tibble(
   bc_region = sheet_names,
   data = map(sheet_names, ~ read_excel(file_path, sheet = .x, skip=3)))|>
@@ -61,7 +85,7 @@ lfs_data <- tibble(
   pivot_longer(cols=starts_with("2"), names_to = "year", values_to = "count")|>
   clean_names()|>
   filter(str_detect(lmo_ind_code, "ind"))|>
-  mutate(source="lfs",
+  mutate(series="lfs",
          year=as.numeric(year))|>
   select(-lmo_ind_code)|>
   rename(lmo_industry_name=lmo_detailed_industry)
@@ -76,7 +100,7 @@ stokes_data <- tibble(sheet=excel_sheets(here("data",
   mutate(bc_region=sort(unique(lfs_data$bc_region)))|>
   select(-sheet)|>
   unnest(data)|>
-  mutate(source="stokes")|>
+  mutate(series="new")|>
   filter(year>=year(today()))|>
   fuzzyjoin::stringdist_join(correct_names)
 
@@ -90,32 +114,71 @@ all_data <- bind_rows(lfs_data, stokes_data)|>
   rename(industry=lmo_industry_name)
 
 #aggregate the data-----------------------------------------
-
 by_region <- all_data|>
-  group_by(year, bc_region, source)|>
+  group_by(year, bc_region, series)|>
   mutate(share=count/sum(count, na.rm = TRUE))
 
 all_regions <- all_data|>
-  group_by(year, industry, source)|>
+  group_by(year, industry, series)|>
   summarize(count=sum(count))|>
-  group_by(year, source)|>
+  group_by(year, series)|>
   mutate(share=count/sum(count, na.rm = TRUE),
          bc_region="British Columbia")
 
-by_region <- bind_rows(all_regions, by_region)
+by_region <- bind_rows(all_regions, by_region)|>
+  pivot_longer(cols=c("count","share"))
+
+by_region%>%
+  split(.$series) %>%
+  list2env(envir = .GlobalEnv)
+
+region_shares <- lfs|>
+  group_by(bc_region, industry, name) |>
+  nest()|>
+  mutate(data=map(data, as_tsibble, index=year),
+         data=map(data, stl_decomp))|>
+  unnest(data)|>
+  bind_rows(new)|>
+  group_by(industry, bc_region, name, series) |>
+  nest()|>
+  mutate(cagr=map_dbl(data, get_cagr),
+         alpha=if_else(series=="LFS", .25, 1))|>
+  unnest(data)
+
+#by industry
 
 by_industry <- all_data|>
-  group_by(year, industry, source)|>
+  group_by(year, industry, series)|>
   mutate(share=count/sum(count, na.rm = TRUE)) #annual regional shares by industry
 
 all_industries <- all_data|>
-  group_by(year, bc_region, source)|>
+  group_by(year, bc_region, series)|>
   summarize(count=sum(count))|>
-  group_by(year, source)|>
+  group_by(year, series)|>
   mutate(share=count/sum(count, na.rm = TRUE),
          industry="All industries")
 
-by_industry <- bind_rows(by_industry, all_industries)
+by_industry <- bind_rows(by_industry, all_industries)|>
+  pivot_longer(cols=c("count","share"))
+
+#smooth and add cagrs---------------------------------
+
+by_industry%>%
+  split(.$series) %>%
+  list2env(envir = .GlobalEnv)
+
+industry_shares <- lfs|>
+  group_by(bc_region, industry, name) |>
+  nest()|>
+  mutate(data=map(data, as_tsibble, index=year),
+         data=map(data, stl_decomp))|>
+  unnest(data)|>
+  bind_rows(new)|>
+  group_by(industry, bc_region, name, series) |>
+  nest()|>
+  mutate(cagr=map_dbl(data, get_cagr),
+         alpha=if_else(series=="LFS", .25, 1))|>
+  unnest(data)
 
 # regional stuff for sazid
 
@@ -163,6 +226,6 @@ stokes_regional_diff <- full_join(stokes_regional, stokes_bc)|>
 
 #write to disk------------------------
 
-write_rds(by_industry, here("out","industry_shares.rds"))
-write_rds(by_region, here("out","region_shares.rds"))
+write_rds(industry_shares, here("out","industry_shares.rds"))
+write_rds(region_shares, here("out","region_shares.rds"))
 write_rds(stokes_regional_diff, here("out","stokes_regional_diff.rds"))

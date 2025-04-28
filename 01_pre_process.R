@@ -41,6 +41,13 @@ if(cut=="macro"){
 
 #functions----------------------
 
+symmetric_change <- function(old, new) {
+  denom <- (old + new) / 2
+  result <- ifelse(denom == 0 & new != old, 200 * sign(new - old),
+                   ifelse(denom == 0, 0, (new - old) / denom * 100))
+  return(result)
+}
+
 stl_decomp <- function(tbbl){
   tbbl |>
     model(STL(value))|>
@@ -62,16 +69,13 @@ get_cagr <- function(tbbl){
   cagr <- (end/start)^(1/10)-1
 }
 
-get_cagr2 <- function(tbbl){
+get_cagr2 <- function(tbbl){ #ONLY PASS THE 10 YEAR DATA TO THIS FUNCTION
   tbbl <- tbbl|>
     mutate(year=as.numeric(year))
   end <- tbbl$value[tbbl$year==max(tbbl$year)]
-  start <- tbbl$value[tbbl$year==(max(tbbl$year)-10)]
-  cagr <- (end/start)^(1/10)-1
+  start <- tbbl$value[tbbl$year==min(tbbl$year)]
+  cagr <- (end/start)^(1/(max(tbbl$year)-min(tbbl$year)))-1
 }
-
-
-
 get_rmse <- function(tbbl){
   sqrt(mean((tbbl$new_value-tbbl$original_value)^2))
 }
@@ -154,9 +158,9 @@ get_sheets <- function(path){
 }
 
 get_cagrs <- function(tbbl, column){
-  val_now <- tbbl[[column]][tbbl$name==(max(tbbl$name)-10)]
-  val_fyfn <- tbbl[[column]][tbbl$name==(max(tbbl$name)-5)]
-  val_tyfn <- tbbl[[column]][tbbl$name==max(tbbl$name)]
+  val_now <- tbbl[[column]][tbbl$date==(max(tbbl$date)-years(10))]
+  val_fyfn <- tbbl[[column]][tbbl$date==(max(tbbl$date)-years(5))]
+  val_tyfn <- tbbl[[column]][tbbl$date==max(tbbl$date)]
   cagr_ffy <- ((val_fyfn/val_now)^.2-1)
   cagr_sfy <- ((val_tyfn/val_fyfn)^.2-1)
   cagr_ty <- ((val_tyfn/val_now)^.1-1)
@@ -165,11 +169,13 @@ get_cagrs <- function(tbbl, column){
 
 # the program-------------------------------------
 
+#comparison between the cuts-----------------------------------------
+
 original_tbbl <- tibble(which_file=list.files(here("data", old_folder)),
                         path=here("data", old_folder, which_file))|>
   mutate(sheet=map(path, get_sheets))|>
   unnest(sheet)|>
-  filter(!(sheet=="Investment" & which_file != "BritishColumbiaTables.xlsx"))|> #regional investment wonky
+  filter(!(sheet=="Investment" & which_file != "BritishColumbiaTables.xlsx"))|> #regional investment wonky (macro cut)
   mutate(original_data=map2(which_file, sheet, read_sheet, old_folder))|>
   select(-path)
 
@@ -177,11 +183,13 @@ new_tbbl <- tibble(which_file=list.files(here("data", new_folder)),
                    path=here("data", new_folder, which_file))|>
   mutate(sheet=map(path, get_sheets))|>
   unnest(sheet)|>
-  filter(!(sheet=="Investment" & which_file != "BritishColumbiaTables.xlsx"))|> #regional investment wonky
+  filter(!(sheet=="Investment" & which_file != "BritishColumbiaTables.xlsx"))|> #regional investment wonky (macro cut)
   mutate(new_data=map2(which_file, sheet, read_sheet, new_folder))|>
   select(-path)
 
 #Regional investment sheets a bit wonky...
+
+if(cut=="macro"){
 
 ri_files <- list.files(here("data",
                             old_folder))[str_detect(list.files(here("data",
@@ -208,6 +216,7 @@ ri_new <- tibble(which_file=ri_files,
   select(-path)
 
 new_tbbl <- bind_rows(new_tbbl, ri_new)
+}
 
 if(cut=="industry"){
   original_tbbl <- original_tbbl|>
@@ -221,20 +230,16 @@ joined <- inner_join(original_tbbl, new_tbbl)|>
          new_data=map(new_data, make_long, "new"))|>
   mutate(joined=map2(new_data, original_data, inner_join),
          joined=map(joined, clean_it))|>
-  select(-new_data, -original_data)
-
-write_rds(joined, here("out","joined.rds"))
-
-joined|>
-  mutate(joined=map(joined, pivot_longer, cols=c("new_value", "original_value"), names_to = "series"))|>
+  select(-new_data, -original_data)|>
   unnest(joined)|>
+  mutate(percent_change=symmetric_change(original_value, new_value))|>
+  pivot_longer(cols=c("new_value", "original_value"), names_to = "series")|>
   group_by(which_file, sheet, variable, series)|>
   nest()|>
-  mutate(cagr=map_dbl(data, get_cagr2))|>
-  unnest(data)|>
-  write_rds(here("out", "joined_with_cagrs.rds"))
+  mutate(cagr=map_dbl(data, get_cagr2))|> #note that this assumes only passing data you need.
+  unnest(data)
 
-
+write_rds(joined, here("out", "joined.rds"))
 
 ############ internal_vs_stokes------------------------
 
@@ -294,26 +299,27 @@ internal_vs_stokes_totals <- internal_vs_stokes|>
             internal=sum(internal))|>
   mutate(industry="Total")
 
-internal_vs_stokes <- bind_rows(internal_vs_stokes, internal_vs_stokes_totals)
-
-write_rds(internal_vs_stokes, here("out","internal_vs_stokes.rds"))
-
-internal_vs_stokes|>
+internal_vs_stokes <- bind_rows(internal_vs_stokes, internal_vs_stokes_totals)|>
+  mutate(name=as.numeric(name))|>
+  filter(name>=(max(name)-10))|>
   mutate(name=as.numeric(name))|>
   filter(name>=(max(name)-10))|> #only the forecast period
+  mutate(percent_change=symmetric_change(stokes_cut, internal))|>
   pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
   mutate(date=ymd(paste(name, "06","01", sep="/")))|>
   select(-name)|>
   group_by(industry, series)|>
   nest()|>
   mutate(cagr=map_dbl(data, get_cagr))|>
-  unnest(data)|>
-  write_rds(here("out","with_cagrs.rds"))
+  unnest(data)
+
+write_rds(internal_vs_stokes, here("out","internal_vs_stokes.rds"))
 
 # CAGR stuff----------------------------------------
 
 cagrs <- internal_vs_stokes|>
-  mutate(name=as.numeric(name))|>
+  select(-cagr)|>
+  pivot_wider(names_from = series, values_from = value)|>
   group_by(industry)|>
   nest()|>
   mutate(internal=map(data, get_cagrs, "internal"),
