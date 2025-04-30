@@ -1,6 +1,6 @@
 #' you need to set the cut type:
-#cut <- "macro"
-cut <- "industry"
+cut <- "macro"
+#cut <- "industry"
 
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)

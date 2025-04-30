@@ -1,3 +1,4 @@
+# code specific to industry cut
 
 correct_names <- read_excel(here("data","industry_mapping_2025_with_stokes_agg.xlsx"))|>
   select(lmo_industry_name=lmo_detailed_industry)|>
