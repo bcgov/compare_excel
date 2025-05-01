@@ -219,7 +219,7 @@ regional_macro_cut <- function(folder_name){
            bc_region=str_replace_all(bc_region, "&"," and "))|>
     fuzzyjoin::stringdist_full_join(lfs_region_names, by = "bc_region", max_dist=4)|>
     unnest(data)|>
-    mutate(source=str_split(folder_name, "_")[[1]][[2]])|>
+    mutate(series=str_split(folder_name, "_")[[1]][[2]])|>
     ungroup()|>
     rename(bc_region=bc_region.y)|>
     select(-bc_region.x)|>

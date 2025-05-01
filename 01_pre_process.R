@@ -19,6 +19,9 @@ library(fpp3)
 library(conflicted)
 conflicts_prefer(dplyr::filter)
 conflicts_prefer(dplyr::lag)
+# clean up intermediate objects--------------------
+int_obj <- list.files(here("out"), full.names = TRUE)
+file.remove(int_obj)
 # constants---------------
 
 if(cut=="macro"){
@@ -253,10 +256,225 @@ rtra_data <- bind_rows(rtra_data, rtra_data_totals)|>
 
 write_rds(rtra_data, here("out","rtra_data.rds"))
 
-if(cut=="macro") source("02_macro_shares.R")
-if(cut=="industry") source("03_industry_shares.R")
+# pull code from ...shares.R files into this file---------------------
 
+detailed_to_stokes <- mapping|>
+  select(lmo_detailed_industry, stokes_industry)|>
+  distinct()
 
+correct_names <- mapping|>
+  select(lmo_industry_name=lmo_detailed_industry)|>
+  distinct()
 
+file_path <-here("data", "Employment for 64 LMO Industries 2000-2024.xlsx")
+sheet_names <- excel_sheets(file_path)[-c(1,5,6)] #could fail
 
+annual_lfs <- tibble(
+  bc_region = sheet_names,
+  data = map(sheet_names, ~ read_excel(file_path, sheet = .x, skip=3)))|>
+  unnest(data)|>
+  pivot_longer(cols=starts_with("2"), names_to = "when", values_to = "count")|>
+  clean_names()|>
+  filter(str_detect(lmo_ind_code, "ind"))|>
+  mutate(series="lfs",
+         when=as.numeric(when))
 
+if(cut=="macro"){
+  annual_lfs <- inner_join(annual_lfs, detailed_to_stokes)|>
+    group_by(when, bc_region, industry=stokes_industry, series)|>
+    summarize(count=sum(count, na.rm = TRUE))
+
+  lfs_region_names <- annual_lfs|> #LFS has correct naming: use to correct naming in stokes data with fuzzyjoin below
+    ungroup()|>
+    select(bc_region)|>
+    distinct()
+
+  stokes_industries <- mapping|>
+    select(stokes_industry)|>
+    distinct()|>
+    pull()
+  stokes_data <- regional_macro_cut("macro_new")
+
+}else{
+  annual_lfs <- annual_lfs|>
+    select(-lmo_ind_code)|>
+    rename(industry=lmo_detailed_industry)
+
+  file_name <- list.files(here("data","industry_new"), pattern = "IndustryEmploymentBC")
+  stokes_data <- tibble(sheet=excel_sheets(here("data",
+                                                "industry_new",
+                                                file_name))[-1])|>
+    mutate(data=map(sheet, get_sheet, "industry_new"))|>
+    arrange(sheet)|>
+    mutate(bc_region=sort(unique(annual_lfs$bc_region)))|>
+    select(-sheet)|>
+    unnest(data)|>
+    mutate(series="new")|>
+    filter(when>=year(today()))|>
+    fuzzyjoin::stringdist_join(correct_names)
+
+  stokes_data[stokes_data$lmo_industry_name.x!=stokes_data$lmo_industry_name.y,c(1,6)]|>distinct()
+
+  stokes_data <- stokes_data|>
+    select(-lmo_industry_name.x)|>
+    rename(industry=lmo_industry_name.y)
+}
+
+all_data <- bind_rows(annual_lfs, stokes_data)
+
+#aggregate the data-----------------------------------------
+
+#by region---------------------------------
+
+by_region <- all_data|>
+  group_by(when, bc_region, series)|>
+  mutate(share=count/sum(count, na.rm = TRUE))
+
+all_regions <- all_data|>
+  group_by(when, industry, series)|>
+  summarize(count=sum(count))|>
+  group_by(when, series)|>
+  mutate(share=count/sum(count, na.rm = TRUE),
+         bc_region="British Columbia")
+
+by_region <- bind_rows(all_regions, by_region)|>
+  pivot_longer(cols=c("count","share"))
+
+by_region%>%
+  split(.$series) %>%
+  list2env(envir = .GlobalEnv)
+
+region_shares <- lfs|>
+  group_by(bc_region, industry, name) |>
+  nest()|>
+  mutate(data=map(data, as_tsibble, index=when),
+         data=map(data, stl_decomp))|>
+  unnest(data)|>
+  bind_rows(new)|>
+  group_by(industry, bc_region, name, series) |>
+  nest()|>
+  mutate(cagr=map_dbl(data, get_10ish_cagr),
+         alpha=if_else(series=="LFS", .25, 1))|>
+  unnest(data)
+
+#by industry
+
+by_industry <- all_data|>
+  group_by(when, industry, series)|>
+  mutate(share=count/sum(count, na.rm = TRUE)) #annual regional shares by industry
+
+all_industries <- all_data|>
+  group_by(when, bc_region, series)|>
+  summarize(count=sum(count))|>
+  group_by(when, series)|>
+  mutate(share=count/sum(count, na.rm = TRUE),
+         industry="All industries")
+
+by_industry <- bind_rows(by_industry, all_industries)|>
+  pivot_longer(cols=c("count","share"))
+
+#smooth and add cagrs---------------------------------
+
+by_industry%>%
+  split(.$series) %>%
+  list2env(envir = .GlobalEnv)
+
+industry_shares <- lfs|>
+  group_by(bc_region, industry, name) |>
+  nest()|>
+  mutate(data=map(data, as_tsibble, index=when),
+         data=map(data, stl_decomp))|>
+  unnest(data)|>
+  bind_rows(new)|>
+  group_by(industry, bc_region, name, series) |>
+  nest()|>
+  mutate(cagr=map_dbl(data, get_10ish_cagr),
+         alpha=if_else(series=="LFS", .25, 1))|>
+  unnest(data)
+
+#Sazid regional stuff------------------------
+
+if(cut=="macro"){
+  stokes_data_old <- regional_macro_cut("macro_old")|>
+    pivot_wider(names_from = series, values_from = count)
+
+  stokes_data_new <- regional_macro_cut("macro_new")|>
+    pivot_wider(names_from = series, values_from = count)
+
+  stokes_regional <- full_join(stokes_data_old, stokes_data_new)
+
+  stokes_bc <- stokes_regional|>
+    group_by(industry, when)|>
+    summarize(new=sum(new),
+              old=sum(old))|>
+    mutate(bc_region="Subtotals")
+
+  stokes_bc_new <- get_bc_data("macro_new")|>
+    pivot_wider(names_from = source, values_from = count)
+  stokes_bc_old <- get_bc_data("macro_old")|>
+    pivot_wider(names_from = source, values_from = count)
+  stokes_bc_total <- full_join(stokes_bc_new, stokes_bc_old)
+}else{
+  stokes_data_new <- regional_industry_cut("industry_new")
+  stokes_data_old <- regional_industry_cut("industry_old")
+
+  stokes_all <- full_join(stokes_data_new, stokes_data_old)|>
+    rename(industry=lmo_industry_name,
+           bc_region=sheet)
+
+  stokes_bc <- stokes_all|>
+    filter(bc_region=="BC")
+
+  stokes_regional <- stokes_all|>
+    filter(bc_region!="BC")
+
+  stokes_bc_total <- stokes_regional|>
+    group_by(industry, when)|>
+    summarize(new=sum(new),
+              old=sum(old))|>
+    mutate(bc_region="Subtotals")
+}
+
+stokes_regional_diff <- bind_rows(stokes_regional, stokes_bc)|>
+  bind_rows(stokes_bc_total)|>
+  mutate(difference=new-old,
+         scaled_difference=log10(abs(difference)+1),
+         scaled_difference=if_else(difference>0, scaled_difference, -scaled_difference),
+         percent_difference=new/old-1)
+
+if(cut=="macro"){
+  stokes_regional_diff <- stokes_regional_diff|>
+    filter(bc_region!="British Columbia")|>
+    mutate(bc_region=factor(bc_region,
+                            ordered = TRUE,
+                            levels=c(
+                              "BritishColumbiaTables",
+                              "Subtotals",
+                              "Northeast",
+                              "North Coast & Nechako",
+                              "Cariboo",
+                              "Kootenay",
+                              "Thompson-Okanagan",
+                              "Vancouver Island And Coast",
+                              "Lower Mainland-Southwest")))
+} else {
+  stokes_regional_diff <- stokes_regional_diff|>
+    mutate(bc_region=factor(bc_region,
+                     ordered = TRUE,
+                     levels=c(
+                     "BC",
+                     "Subtotals",
+                     "NE",
+                     "NCN",
+                     "CAR",
+                     "KOO",
+                     "TOK",
+                     "VIC",
+                     "MSW")
+                     )
+           )
+}
+#write to disk------------------------------
+write_rds(industry_shares, here("out","industry_shares.rds"))
+write_rds(region_shares, here("out","region_shares.rds"))
+write_rds(stokes_regional_diff, here("out","stokes_regional_diff.rds"))
