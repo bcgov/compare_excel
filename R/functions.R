@@ -50,23 +50,6 @@ get_10ish_cagr <- function(tbbl){
   }
 }
 
-# get_cagr_year <- function(tbbl){#sometimes only 9 years available.
-#  # browser()
-#   tbbl <- tbbl|>
-#     mutate(when=as.numeric(when))
-#   span <- max(tbbl$when) - min(tbbl$when)
-#   if(span>=10){
-#     end <- tbbl$value[tbbl$when==max(tbbl$when)]
-#     start <- tbbl$value[tbbl$when==max(tbbl$when)-10]
-#     elapsed <- 10
-#   } else {
-#     end <- tbbl$value[tbbl$when==max(tbbl$when)]
-#     start <- tbbl$value[tbbl$when==min(tbbl$when)]
-#     elapsed <- max(tbbl$when) - min(tbbl$when)
-#   }
-#   (end/start)^(1/elapsed)-1
-# }
-
 get_cagrs <- function(tbbl, column){
   val_now <- tbbl[[column]][tbbl$when==(max(tbbl$when)-years(10))]
   val_fyfn <- tbbl[[column]][tbbl$when==(max(tbbl$when)-years(5))]
@@ -76,7 +59,6 @@ get_cagrs <- function(tbbl, column){
   cagr_ty <- ((val_tyfn/val_now)^.1-1)
   tibble(cagr_ffy=cagr_ffy, cagr_sfy=cagr_sfy,cagr_ty=cagr_ty)
 }
-
 
 get_rmse <- function(tbbl){
   sqrt(mean((tbbl$new_value-tbbl$original_value)^2))
@@ -134,14 +116,17 @@ correct_typos <- function(tbbl){
 add_category <- function(tbbl){
   tbbl|>
     dplyr::mutate(category=grepl("^[A-Z &,\\-]+$", variable), #is value of variable in all caps?
-                  category=dplyr::if_else(category, variable, NA_character_), .before=variable)|> #if in all caps, category=variable, else NA
+                  category=dplyr::if_else(category, variable, NA_character_), .before=variable,
+                  variable=paste0((row_number()+add_rows),": ", variable) #number the rows
+                  )|> #if in all caps, category=variable, else NA
     tidyr::fill(category, .direction = "down")|> #fill all the NAs downwards
     na.omit()|>
     mutate(category=str_replace_all(category, "BUSIVICSS", "BUSINESS"),
            variable=str_replace_all(variable, "BUSIVICSS", "BUSINESS"),
     )|>
     mutate(across(starts_with("2"), as.numeric))|>
-    unite(variable, category, variable, sep = ": ")
+    unite(variable, category, variable, sep = ": ")|>
+    filter(!str_detect(variable, "%"))
 }
 
 read_sheet <- function(which_file, sheet, sub_directory){
@@ -154,13 +139,15 @@ read_sheet <- function(which_file, sheet, sub_directory){
   colnames(tbbl)[1] <- "variable" #missing name of the series identifier
 
   tbbl[-1] <- lapply(tbbl[-1], as.numeric) #convert 2nd--last column to numeric
-  tbbl
+  tbbl|>
+    mutate(variable=paste0((row_number()+add_rows),": ", variable)) #number the rows
 }
 
 make_long <- function(tbbl, prepend){
   tbbl|>
-    mutate(variable=paste0((row_number()+add_rows),": ", variable))|> #number the rows
-    filter(!str_detect(variable, "%"))|>
+    filter(!str_detect(variable, "% Change"),
+           !str_detect(variable, "Share %")
+           )|>
     pivot_longer(cols = -variable,
                  names_to = "when",
                  values_to = paste(prepend, "value", sep="_"))

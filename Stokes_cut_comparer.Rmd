@@ -248,7 +248,7 @@ plotly::renderPlotly({
                             "\n Series: ",
                              series,
                             "\n Value: ",
-                             scales::comma(value, accuracy = 1),
+                             scales::comma(value, accuracy = .1),
                             "\n CAGR: ",
                             scales::percent(cagr, accuracy = .1))))+
     geom_line()+
@@ -278,9 +278,9 @@ DT::renderDT({
     ungroup()|>
     pivot_wider(names_from = "series", values_from = "value")|>
     select(when, new_value, original_value, percent_change)|>
-    mutate(percent_change=round(percent_change,1),
-           new_value=scales::comma(new_value, accuracy = 1),
-           original_value=scales::comma(original_value, accuracy = 1))|>
+    mutate(percent_change=round(percent_change, 1),
+           new_value=scales::comma(new_value, accuracy = .1),
+           original_value=scales::comma(original_value, accuracy = .1))|>
     DT::datatable( rownames = FALSE)
 })
 ```
@@ -332,7 +332,7 @@ plotly::renderPlotly({
                              "\n Series: ",
                              series,
                              "\n Value: ",
-                             scales::comma(value, accuracy = 1),
+                             scales::comma(value, accuracy = .1),
                              "\n CAGR: ",
                              scales::percent(cagr, accuracy = .1)
                             )
@@ -349,7 +349,7 @@ plotly::renderPlotly({
                                       "\n Series: ",
                                       series,
                                       "\n Value: ",
-                                      scales::comma(value, accuracy = 1),
+                                      scales::comma(value, accuracy = .1),
                                       "\n CAGR: ",
                                       scales::percent(cagr, accuracy = .1)
                                       )))+
@@ -444,7 +444,7 @@ plotly::renderPlotly({
                            series,
                            "\n value: ",
                            if(input$what=="count"){
-                             scales::comma(value, accuracy = 1)
+                             scales::comma(value, accuracy = .1)
                            }else{
                              scales::percent(value, accuracy = .1)
                            }
@@ -519,7 +519,7 @@ plotly::renderPlotly({
                            series,
                            "\n value: ",
                            if(input$what2=="count"){
-                             scales::comma(value, accuracy = 1)
+                             scales::comma(value, accuracy = .1)
                            }else{
                              scales::percent(value, accuracy = .1)
                            },
@@ -591,12 +591,12 @@ renderPlot({
   filter(industry==input$industry2)|>
   ggplot(aes(when, bc_region))+
   geom_tile(aes(fill=scaled_difference), colour="black")+
-  geom_text(aes(label=paste0(scales::comma(difference, accuracy = 1),
+  geom_text(aes(label=paste0(scales::comma(difference, accuracy = .1),
                              "\n",
                              "(",scales::percent(percent_difference, accuracy = .1),
                              ")",
                              "\n",
-                             new
+                             scales::comma(new, accuracy = .1)
                              )),
             size=5)+
   colorspace::scale_fill_continuous_diverging()+
