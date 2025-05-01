@@ -164,7 +164,7 @@ reactive_tbbl <- reactive({
     remove_empty("rows")|>
     as.matrix()
    
-    row_order <- order(matrixStats::rowMaxs(tbbl))  
+    row_order <- order(rowMeans(abs(tbbl)))
     tbbl[row_order, ]
 })
 
@@ -188,7 +188,7 @@ reactive_wide <- reactive({
   column_to_rownames("industry")|>
   as.matrix()
    
-  row_order <- order(matrixStats::rowMaxs(wide))  
+  row_order <- order(rowMeans(abs(wide)))  
   wide[row_order, ]
 })
 

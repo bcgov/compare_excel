@@ -7,7 +7,7 @@ cut <- "macro"
 #' they need to have the same sheet names (between versions)
 #' they need to have the same series names aka row identifiers (between versions)
 #' the only thing that should differ is the numeric data.
-#' there is a fuzzyjoin around line 144... this should be checked manually.
+#' there is a fuzzyjoin around line 160... this should be checked manually.
 
 #libraries-----------------------
 library(tidyverse)
