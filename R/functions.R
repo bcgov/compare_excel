@@ -14,13 +14,7 @@ stl_decomp <- function(tbbl){
     pivot_longer(-when, names_to="series", values_to="value")
 }
 
-# get_cagr_yearmonth <- function(tbbl){
-#   end <- tbbl$value[tbbl$when==max(tbbl$when)]
-#   start <- tbbl$value[ym(tbbl$when)==(ym(max(tbbl$when))-years(10))]
-#   cagr <- (end/start)^(1/10)-1
-# }
-
-get_10ish_cagr <- function(tbbl){
+get_10_cagr <- function(tbbl){
   when_formats <- c("Date", "yearmonth", "character", "numeric")
   assertthat::assert_that("when" %in% names(tbbl), msg = "function requires a column called 'when'")
   assertthat::assert_that("value" %in% names(tbbl), msg = "function requires a column called 'value'")
@@ -34,20 +28,10 @@ get_10ish_cagr <- function(tbbl){
          "character" = tbbl <- tbbl |> mutate(when = ymd(paste(when,"06", "01", sep = "/"))),
          "numeric" = tbbl <- tbbl |> mutate(when = ymd(paste(when,"06", "01", sep = "/")))
          )
-  span <- lubridate::interval(min(tbbl$when), max(tbbl$when))/years(1)
-  if(span>=10){
+
     end <- tbbl$value[tbbl$when==max(tbbl$when)]
     start <- tbbl$value[tbbl$when==max(tbbl$when)-years(10)]
-    elapsed <- 10
-    (end/start)^(1/elapsed)-1
-  } else if (span>8){
-    end <- tbbl$value[tbbl$when==max(tbbl$when)]
-    start <- tbbl$value[tbbl$when==min(tbbl$when)]
-    elapsed <- span
-    (end/start)^(1/elapsed)-1
-  } else {
-    stop("Not enough data to calculate a 10ish year CAGR")
-  }
+    (end/start)^(.1)-1
 }
 
 get_cagrs <- function(tbbl, column){
@@ -74,7 +58,8 @@ get_mean <- function(tbbl){
 
 clean_it <- function(tbbl){
   tbbl|>
-    filter(when>=year(today()))|>
+    mutate(when=as.numeric(when))|>
+    filter(when>=max(when)-10)|>
     na.omit()
 }
 
@@ -83,10 +68,10 @@ tidy_up <- function(tbbl){
   tbbl|>
     filter(industry %in% stokes_industries)|>
     pivot_longer(cols=-industry, names_to = "when", values_to = "count")|>
-    filter(when>=year(today()))|>
     mutate(count=as.numeric(count),
            count=count*1000,
-           when=as.numeric(when))
+           when=as.numeric(when))|>
+    filter(when>=max(when)-10)
 }
 
 skip_meta <- function(path_to_file, sheet=1, meta_less_than=100, cutoff=.5){
@@ -190,7 +175,7 @@ regional_industry_cut <- function(folder_name){
     mutate(data=map(sheet, get_sheet, folder_name))|>
     unnest(data)|>
     mutate(source=str_split(folder_name, "_")[[1]][[2]])|>
-    filter(when>=year(today()))|>
+    filter(when>=max(when)-10)|>
     fuzzyjoin::stringdist_join(correct_names)|>
     select(-lmo_industry_name.x)|>
     rename(lmo_industry_name=lmo_industry_name.y)|>

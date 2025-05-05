@@ -1,6 +1,6 @@
 #' you need to set the cut type:
-cut <- "macro"
-#cut <- "industry"
+#cut <- "macro"
+cut <- "industry"
 
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)
@@ -103,7 +103,7 @@ if(cut=="industry"){
 joined <- inner_join(original_tbbl, new_tbbl)|>
   mutate(original_data=map(original_data, make_long, "original"),
          new_data=map(new_data, make_long, "new"),
-         joined=map2(new_data, original_data, inner_join),
+         joined=map2(new_data, original_data, full_join), #full join because years might not match
          joined=map(joined, clean_it))|>
   select(-new_data, -original_data)|>
   unnest(joined)|>
@@ -111,7 +111,7 @@ joined <- inner_join(original_tbbl, new_tbbl)|>
   pivot_longer(cols=c("new_value", "original_value"), names_to = "series")|>
   group_by(which_file, sheet, variable, series)|>
   nest()|>
-  mutate(cagr=map_dbl(data, get_10ish_cagr))|>
+  mutate(cagr=map_dbl(data, get_10_cagr))|>
   unnest(data)
 
 write_rds(joined, here("out", "joined.rds"))
@@ -181,7 +181,7 @@ internal_vs_stokes <- bind_rows(internal_vs_stokes, internal_vs_stokes_totals)|>
   pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
   group_by(industry, series)|>
   nest()|>
-  mutate(cagr=map_dbl(data, get_10ish_cagr))|>
+  mutate(cagr=map_dbl(data, get_10_cagr))|>
   unnest(data)|>
   mutate(when=ymd(paste(when, "06","01", sep="/")))
 
@@ -249,7 +249,7 @@ rtra_data <- bind_rows(rtra_data, rtra_data_totals)|>
   unnest(data)|>
   group_by(industry, series) |>
   nest()|>
-  mutate(cagr=map_dbl(data, get_10ish_cagr),
+  mutate(cagr=map_dbl(data, get_10_cagr),
          alpha=if_else(series=="LFS", .25, 1))|>
   unnest(data)|>
   mutate(when=ym(when))
@@ -309,8 +309,9 @@ if(cut=="macro"){
     mutate(bc_region=sort(unique(annual_lfs$bc_region)))|>
     select(-sheet)|>
     unnest(data)|>
-    mutate(series="new")|>
-    filter(when>=year(today()))|>
+    mutate(series="new",
+           when=as.numeric(when))|>
+    filter(when>=max(when)-10)|>
     fuzzyjoin::stringdist_join(correct_names)
 
   stokes_data[stokes_data$lmo_industry_name.x!=stokes_data$lmo_industry_name.y,c(1,6)]|>distinct()
@@ -353,7 +354,7 @@ region_shares <- lfs|>
   bind_rows(new)|>
   group_by(industry, bc_region, name, series) |>
   nest()|>
-  mutate(cagr=map_dbl(data, get_10ish_cagr),
+  mutate(cagr=map_dbl(data, get_10_cagr),
          alpha=if_else(series=="LFS", .25, 1))|>
   unnest(data)
 
@@ -388,7 +389,7 @@ industry_shares <- lfs|>
   bind_rows(new)|>
   group_by(industry, bc_region, name, series) |>
   nest()|>
-  mutate(cagr=map_dbl(data, get_10ish_cagr),
+  mutate(cagr=map_dbl(data, get_10_cagr),
          alpha=if_else(series=="LFS", .25, 1))|>
   unnest(data)
 
