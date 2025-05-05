@@ -103,8 +103,8 @@ if(cut=="industry"){
 joined <- inner_join(original_tbbl, new_tbbl)|>
   mutate(original_data=map(original_data, make_long, "original"),
          new_data=map(new_data, make_long, "new"),
-         joined=map2(new_data, original_data, full_join), #full join because years might not match
-         joined=map(joined, clean_it))|>
+         joined=map2(new_data, original_data, full_join) #full join because years might not match
+         )|>
   select(-new_data, -original_data)|>
   unnest(joined)|>
   mutate(percent_change=symmetric_change(original_value, new_value))|>
@@ -130,7 +130,9 @@ internal <- read_excel(here("data",
   select(-contains("CAGR"))|>
   pivot_longer(cols=-industry, names_to = "when", values_to = "internal")|>
   separate(industry, into=c("code", "industry"), sep=": ")|>
-  select(-code)
+  select(-code)|>
+  mutate(when=as.numeric(when))|>
+  filter(when>=(max(when)-10)) #only the forecast period
 
 if(cut=="macro"){
   internal <- inner_join(internal, detailed_to_stokes, by=c("industry"="lmo_detailed_industry"))|>
@@ -145,6 +147,9 @@ stokes_cut <- read_excel(here("data",
                          skip =skip)
 
 colnames(stokes_cut)[1] <- "industry"
+
+stokes_cut <- stokes_cut|>
+  mutate(industry=str_replace_all(industry,", online shopping", ""))
 
 internal_vs_stokes_wrong <- stokes_cut|>
   pivot_longer(cols=-industry, names_to = "when", values_to = "stokes_cut")|>
@@ -166,7 +171,9 @@ internal_vs_stokes <-internal_vs_stokes_wrong|>
   ungroup()|>
   select(-industry.x)|>
   unnest(data)|>
-  inner_join(internal)
+  mutate(when=as.numeric(when))|>
+  filter(when>=(max(when)-10))|> #only the forecast period
+  full_join(internal)
 
 internal_vs_stokes_totals <- internal_vs_stokes|>
   group_by(when)|>
@@ -175,12 +182,11 @@ internal_vs_stokes_totals <- internal_vs_stokes|>
   mutate(industry="Total")
 
 internal_vs_stokes <- bind_rows(internal_vs_stokes, internal_vs_stokes_totals)|>
-  mutate(when=as.numeric(when))|>
-  filter(when>=(max(when)-10))|> #only the forecast period
   mutate(percent_change=symmetric_change(stokes_cut, internal))|>
   pivot_longer(cols=c(stokes_cut, internal), names_to = "series", values_to = "value")|>
   group_by(industry, series)|>
   nest()|>
+  mutate(data=map(data, no_na_value))|>
   mutate(cagr=map_dbl(data, get_10_cagr))|>
   unnest(data)|>
   mutate(when=ymd(paste(when, "06","01", sep="/")))

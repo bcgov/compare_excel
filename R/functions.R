@@ -135,7 +135,10 @@ make_long <- function(tbbl, prepend){
            )|>
     pivot_longer(cols = -variable,
                  names_to = "when",
-                 values_to = paste(prepend, "value", sep="_"))
+                 values_to = paste(prepend, "value", sep="_"))|>
+    mutate(when=as.numeric(when))|>
+    filter(when>=max(when)-10)|>
+    na.omit()
 }
 
 get_sheets <- function(path){
@@ -209,6 +212,9 @@ get_bc_data <- function(folder_name){
     na.omit()
 }
 
-
+no_na_value <- function(tbbl){
+  tbbl|>
+    filter(!is.na(value))
+}
 
 
