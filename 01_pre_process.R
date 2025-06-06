@@ -152,6 +152,7 @@ stokes_cut <- stokes_cut|>
   mutate(industry=str_replace_all(industry,", online shopping", ""))
 
 internal_vs_stokes_wrong <- stokes_cut|>
+  mutate(across(-industry, ~as.numeric(.)))|>
   pivot_longer(cols=-industry, names_to = "when", values_to = "stokes_cut")|>
   filter(!industry %in% c("Total", "% Change"),
          !is.na(industry))|>
