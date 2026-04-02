@@ -1,6 +1,6 @@
 #' you need to set the cut type:
-#cut <- "macro"
-cut <- "industry"
+cut <- "macro"
+#cut <- "industry"
 
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)
@@ -16,6 +16,7 @@ library(readxl)
 library(janitor)
 library(assertthat)
 library(fpp3)
+library(qdapRegex)
 library(conflicted)
 conflicts_prefer(dplyr::filter)
 conflicts_prefer(dplyr::lag)
@@ -118,7 +119,7 @@ write_rds(joined, here("out", "joined.rds"))
 
 ############ internal_vs_stokes------------------------
 
-mapping <- read_excel(here("data", "industry_mapping_2025_with_stokes_agg.xlsx"))
+mapping <- read_excel(list.files(here("data"), pattern="industry_mapping_with_stokes_agg.xlsx", full.names = TRUE))
 
 detailed_to_stokes <- mapping|>
   select(lmo_detailed_industry, stokes_industry)|>
@@ -212,37 +213,45 @@ write_rds(cagrs, here("out","cagrs.rds"))
 
 # LFS data-----------------------------------
 
-rtra_files <- list.files(here("data"), pattern = "lfsstat4digNAICS")
 
-rtra_data <- vroom::vroom(here("data", rtra_files))|>
-  na.omit()|>
-  filter(LF_STAT=="Employed")|>
-  #calculate the monthly totals to filter out 0s at end of LFS data
-  group_by(SYEAR,SMTH)|>
-  mutate(total=sum(`_COUNT_`))|>
+fix_rtra <- function(tbbl, year){
+  syear_missing <- !"SYEAR" %in% colnames(tbbl)
+  if(syear_missing) tbbl <- tbbl|>mutate(SYEAR=year, .before=everything())
+  tbbl|>
+    na.omit()|>
+    mutate(SMTH=str_pad(SMTH, width=2, pad="0"),
+           NAICS_5=str_pad(NAICS_5, width=5, pad="0")
+           )
+}
+
+rtra_data <- tibble(file=list.files(here("data"), pattern = "lfsstat4digNAICS", full.names = TRUE))|>
+  mutate(data=map(file, vroom::vroom, col_types = cols(.default = col_character())),
+         data=map(data, fix_rtra, as.character(year(today())))
+         )|>
+  pull(data)|>
+  list_rbind()|>
+  filter(LF_STAT=="Employed")|>#calculate the monthly totals to filter out 0s at end of LFS data
+  mutate(total=sum(as.numeric(`_COUNT_`)), .by=c(SYEAR, SMTH)
+         )|>
   filter(total>0)|>
-  select(-total)|>
-  #zeros gone
+  select(-total)|>#its done its job
   inner_join(mapping, by=c("NAICS_5"="naics_5"))|>
-  group_by(lmo_detailed_industry, SYEAR, SMTH)|>
-  summarise(value=sum(`_COUNT_`, na.rm=TRUE))|>
+  summarise(value=sum(as.numeric(`_COUNT_`), na.rm=TRUE), .by=c(lmo_detailed_industry, SYEAR, SMTH))|>
   mutate(when=ym(paste(SYEAR, SMTH, sep="/")),
          series="LFS Data")|>
-  ungroup()|>
   select(-SYEAR,-SMTH)
 
 if(cut=="macro"){
-  rtra_data <- inner_join(rtra_data, detailed_to_stokes)|>
-    group_by(when, industry=stokes_industry, series)|>
-    summarize(value=sum(value))
+  rtra_data <- inner_join(rtra_data, detailed_to_stokes, by = join_by(lmo_detailed_industry))|>
+    rename(industry=stokes_industry)|>
+    summarize(value=sum(value), .by=c(when, industry, series))
 }else{
   rtra_data <- rtra_data|>
     select(industry=lmo_detailed_industry, value, series, when)
 }
 
 rtra_data_totals <- rtra_data|>
-  group_by(when, series)|>
-  summarize(value=sum(value))|>
+  summarize(value=sum(value), .by=c(when, series))|>
   mutate(industry="Total")
 
 #add in the trend and cagrs
