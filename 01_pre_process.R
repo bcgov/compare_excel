@@ -1,4 +1,4 @@
-#' you need to set the cut type:
+#' you need to set the cut type: and change line 122
 cut <- "macro"
 #cut <- "industry"
 
@@ -119,15 +119,13 @@ write_rds(joined, here("out", "joined.rds"))
 
 ############ internal_vs_stokes------------------------
 
-mapping <- read_excel(list.files(here("data"), pattern="industry_mapping_with_stokes_agg.xlsx", full.names = TRUE))
+mapping <- read_excel(list.files(here("data"), pattern="old_industry_mapping_with_stokes_agg.xlsx", full.names = TRUE))
 
 detailed_to_stokes <- mapping|>
   select(lmo_detailed_industry, stokes_industry)|>
   distinct()
 
-internal <- read_excel(here("data",
-                            "Preliminary Industry Forecast for LMO 2025 Edition.xlsx"),
-                       skip=0)|>
+internal <- read_excel(list.files(here("data"), pattern="Preliminary_Industry_Forecast.xlsx", full.names = TRUE))|>
   select(-contains("CAGR"))|>
   pivot_longer(cols=-industry, names_to = "when", values_to = "internal")|>
   separate(industry, into=c("code", "industry"), sep=": ")|>
@@ -282,7 +280,7 @@ correct_names <- mapping|>
   select(lmo_industry_name=lmo_detailed_industry)|>
   distinct()
 
-file_path <-here("data", "Employment for 64 LMO Industries 2000-2024.xlsx")
+file_path <- list.files(here::here("data"), pattern = "Employment for 63 LMO Industries", full.names = TRUE)
 sheet_names <- excel_sheets(file_path)[-c(1,5,6)] #could fail
 
 annual_lfs <- tibble(
