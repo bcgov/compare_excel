@@ -1,6 +1,6 @@
-#' you need to set the cut type: and change line 122
-cut <- "macro"
-#cut <- "industry"
+#' you need to set the cut type
+#cut <- "macro"
+cut <- "industry"
 
 #' NOTE: the files that are being compared need to be quite similar:
 #' they need to have identical file names (between versions)
@@ -119,7 +119,7 @@ write_rds(joined, here("out", "joined.rds"))
 
 ############ internal_vs_stokes------------------------
 
-mapping <- read_excel(list.files(here("data"), pattern="old_industry_mapping_with_stokes_agg.xlsx", full.names = TRUE))
+mapping <- read_excel(list.files(here("data"), pattern="industry_mapping_with_stokes_agg.xlsx", full.names = TRUE))
 
 detailed_to_stokes <- mapping|>
   select(lmo_detailed_industry, stokes_industry)|>
@@ -173,7 +173,7 @@ internal_vs_stokes <-internal_vs_stokes_wrong|>
   unnest(data)|>
   mutate(when=as.numeric(when))|>
   filter(when>=(max(when)-10))|> #only the forecast period
-  full_join(internal)
+  left_join(internal)
 
 internal_vs_stokes_totals <- internal_vs_stokes|>
   group_by(when)|>
@@ -493,3 +493,4 @@ if(cut=="macro"){
 write_rds(industry_shares, here("out","industry_shares.rds"))
 write_rds(region_shares, here("out","region_shares.rds"))
 write_rds(stokes_regional_diff, here("out","stokes_regional_diff.rds"))
+
